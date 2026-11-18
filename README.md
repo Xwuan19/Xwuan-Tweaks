@@ -15,6 +15,7 @@ Sao chép trực tiếp link **Raw** tương ứng với ứng dụng bạn đan
 | **Locket VIP (RemoteConfig)** | Loon | `https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/modules/Locket_RemoteConfig.plugin` |
 | **Locket VIP (RemoteConfig)** | Quantumult X | `https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/modules/Locket_RemoteConfig.snippet` |
 | **Locket VIP (RemoteConfig)** | Stash | `https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/modules/Locket_RemoteConfig.stoverride` |
+| **Spotify Premium** | Shadowrocket | `https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/products/spotify/on-device/module/spotify-premium-ucs.module` |
 
 > [!IMPORTANT]
 > **2 bước bắt buộc để kích hoạt Locket VIP thành công:**
@@ -27,23 +28,31 @@ Sao chép trực tiếp link **Raw** tương ứng với ứng dụng bạn đan
 
 ```text
 Xwuan-Tweaks/
-├── modules/               # Chính thức: file cấu hình cài thẳng (.module, .sgmodule, .plugin, .snippet, .stoverride)
-├── scripts/               # Chính thức: mã nguồn JS đang hoạt động được modules/ trỏ tới
-├── assets/                # Chính thức: icon và khung ảnh VIP (frames/)
+│  ── HƯỚNG A: module chạy trên máy user (cần app proxy) ──
+├── modules/               # File cấu hình cài thẳng (.module, .sgmodule, .plugin, .snippet, .stoverride)
+├── scripts/               # JS chạy trong app proxy, được modules/ trỏ tới qua raw URL
+├── assets/                # Ảnh dùng trong response (trỏ qua URL tuyệt đối, không đọc bằng path)
 │
-├── products/              # Sản phẩm: spotify/ (2 mảng: on-device + server)
-├── research/              # Nghiên cứu: reference_nightmarket/, scanner/
-├── archive/               # Lưu trữ: scripts/ cũ, spotify-doh-demo/, spotify/reference/ (module & script của người khác)
+│  ── HƯỚNG B: DNS + MITM server (không cần cài app) ──
+├── proxy/                 # Go TLS MITM proxy (Fly.io): ký cert theo SNI, sửa response
+├── public/                # Site tĩnh + profile phát hành Xwuan_DNS.mobileconfig
+├── api/                   # Vercel serverless routes (mỏng, re-export từ admin/)
+├── admin/                 # Logic backend thật (auth, db, nextdns, mobileconfig)
+├── ca/                    # Root CA: cert trong git, key KHÔNG bao giờ vào git
+├── nextdns/               # NextDNS API client + danh sách domain rewrite
+├── supabase/              # Schema & migration database
 │
-├── public/                # Web Portal (Vercel — cài profile Xwuan_DNS.mobileconfig 1-click)
-├── api/                   # Vercel Serverless API
-├── admin/                 # Thư viện backend & tài nguyên quản trị DNS
-├── proxy/                 # Backend TLS MITM Proxy (Go trên Fly.io)
-├── ca/                    # Root CA Certificate
-├── nextdns/               # NextDNS API helper
-├── supabase/              # Cấu hình & migration Supabase
-└── tests/                 # Bộ kiểm thử tự động (Node & Go)
+├── products/              # Sản phẩm nhiều phần (spotify/: on-device + server)
+├── research/              # Nguyên liệu, thử nghiệm (reference_nightmarket/, scanner/)
+├── archive/               # Bản cũ & tham chiếu của người khác — KHÔNG dùng để phát hành
+├── tests/                 # Bộ kiểm thử (Node & Go)
+│
+├── HANDOFF.md             # Trạng thái repo, quyết định đã chốt, việc cần làm
+└── vercel.json            # Cấu hình Vercel duy nhất (ở root)
 ```
+
+> Mỗi thư mục đều có `README.md` riêng giải thích nội dung và ai trỏ tới nó.
+> Bắt đầu từ [`HANDOFF.md`](HANDOFF.md) để biết hiện trạng.
 
 ---
 
@@ -54,7 +63,9 @@ Xwuan-Tweaks/
    - Sản phẩm nhiều phần (như `products/spotify/`) tự quản cấu trúc bên trong: mỗi hướng triển khai một thư mục con có README riêng, dữ liệu dùng chung ở `data/`.
 3. **Đồng bộ Go Proxy**: Khi có payload mới, đồng bộ vào `proxy/handler/firebase.go` hoặc `proxy/handler/revenuecat.go`.
 4. **Kiểm thử trước khi push**:
-   - Node tests: `node --test tests/*.test.js tests/*/*.test.js`
-   - Go proxy tests: `go test ./tests/proxy/...`
-   - Spotify: `node --test tests/research/*.test.js`
-     (engine protobuf + cú pháp module — xem `products/spotify/audit/shadowrocket-module-syntax.md`)
+   ```bash
+   node --test tests/*.test.js tests/*/*.test.js   # 35 test, phải xanh hết
+   go test ./tests/proxy/...                        # cần Go toolchain
+   ```
+5. **Cập nhật `HANDOFF.md`** nếu quyết định thay đổi hoặc phát hiện cạm bẫy mới — file đó
+   là nguồn sự thật cho phiên làm việc sau.

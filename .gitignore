@@ -5,7 +5,6 @@ proxy/ca/*.key
 *.pfx
 
 # Fly & Vercel temp artifacts
-.vercel
 .fly
 
 # System & IDE files
@@ -21,3 +20,8 @@ build/
 
 .vercel
 .playwright-mcp/
+
+# Key/cert lạc chỗ (CA key không bao giờ được vào git)
+**/root-ca.key
+**/*.p12
+**/*.pem
