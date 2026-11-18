@@ -110,22 +110,57 @@ const ucsWrapper = (ucs) => ld(1, ld(1, ucs));
 
 /* ------------------------------------------------------------------ runner */
 
-function run({ url, body, status = 200, argument }) {
+function run({ url, body, status = 200, argument, engine }) {
   let done = null;
+  const rawBody = body && Buffer.isBuffer(body) ? body.toString('latin1') : body;
   const sandbox = {
     $request: { url, method: 'POST' },
-    $response: { status, body: body && Buffer.isBuffer(body) ? body.toString('latin1') : body },
+    $response: { status, body: rawBody },
     $done: (res) => { done = res; },
     $argument: argument,
     console: { log: () => {} },
     Uint8Array, ArrayBuffer, Date, Math, JSON, Object, Array, String, Number, escape, unescape, decodeURIComponent
   };
+  if (engine) sandbox.$environment = { engine };
+  const logs = [];
+  sandbox.console = { log: (m) => logs.push(String(m)) };
   vm.runInNewContext(CODE, sandbox, { timeout: 5000 });
+  run.lastLogs = logs;
+  run.lastResponseBody = rawBody;
   return done;
 }
 
 /** Body trả về là string latin1 -> đưa lại Buffer để decode. */
 const asBuffer = (body) => Buffer.from(body, 'latin1');
+
+/**
+ * Đọc body mà script trả về, chấp nhận mọi kiểu runtime có thể dùng:
+ * string latin1, Uint8Array (webview) hoặc ArrayBuffer (jsc).
+ */
+function doneBody(done) {
+  if (!done || done.body === undefined || done.body === null) return null;
+  const b = done.body;
+  if (typeof b === 'string') return Buffer.from(b, 'latin1');
+  if (Buffer.isBuffer(b)) return b;
+  if (b instanceof Uint8Array) return Buffer.from(b.buffer, b.byteOffset, b.length);
+  if (b instanceof ArrayBuffer) return Buffer.from(new Uint8Array(b));
+  throw new Error('kiểu body không hỗ trợ: ' + Object.prototype.toString.call(b));
+}
+
+/**
+ * Passthrough hợp lệ với binary-body-mode: script PHẢI trả lại nguyên body gốc.
+ * `$done({})` là sai vì Shadowrocket hiểu là "body rỗng" -> hỏng response.
+ */
+function assertPassthrough(done, originalBody) {
+  const got = doneBody(done);
+  const expected = Buffer.isBuffer(originalBody) ? originalBody : Buffer.from(originalBody || '', 'latin1');
+  if (expected.length === 0) {
+    assert.deepStrictEqual(Object.keys(done || {}), [], 'body rỗng thì mới được trả {}');
+    return;
+  }
+  assert.ok(got, 'passthrough phải trả body, không được bỏ trống');
+  assert.strictEqual(Buffer.compare(got, expected), 0, 'passthrough phải giữ nguyên byte gốc');
+}
 
 const BOOTSTRAP_URL = 'https://spclient.wg.spotify.com/bootstrap/v1/bootstrap?abc=1';
 const CUSTOMIZE_URL = 'https://spclient.wg.spotify.com/user-customization-service/v1/customize';
@@ -170,7 +205,7 @@ test('bootstrap: gỡ quảng cáo, đặt attribute Premium, bỏ rule capping'
   const done = run({ url: BOOTSTRAP_URL, body: payload });
   assert.ok(done && done.body, 'script phải trả body đã patch');
 
-  const out = asBuffer(done.body);
+  const out = doneBody(done);
 
   // Đi đúng 3 lớp wrapper.
   const wrapper = getField(out, 2);
@@ -248,7 +283,7 @@ test('customize: payload UcsResponseWrapper chuẩn được patch', () => {
   const done = run({ url: CUSTOMIZE_URL, body: payload });
   assert.ok(done && done.body);
 
-  const out = asBuffer(done.body);
+  const out = doneBody(done);
   const success = getField(out, 1);
   const ucs = getField(success.payload, 1);
   const attrField = getField(ucs.payload, 3);
@@ -265,7 +300,7 @@ test('customize: payload UcsResponse trần (không có wrapper) vẫn patch đ�
   const payload = ucsResponse({ attributes: [['type', attrStr('free')]] });
   const done = run({ url: CUSTOMIZE_URL, body: payload });
   assert.ok(done && done.body);
-  const out = asBuffer(done.body);
+  const out = doneBody(done);
   const attrField = getField(out, 3);
   assert.ok(attrField, 'phải nhận diện được UcsResponse trần');
 });
@@ -284,7 +319,7 @@ test('nebula attributes: patch map và bỏ attribute chặn offline/bitrate', (
   assert.ok(done && done.body);
 
   const map = {};
-  for (const entry of getAll(asBuffer(done.body), 1)) {
+  for (const entry of getAll(doneBody(done), 1)) {
     map[str(getField(entry.payload, 1).payload)] = getField(entry.payload, 2).payload;
   }
 
@@ -310,7 +345,7 @@ test('remote config: bật crossfade/automix và tắt ads theo đúng scope', (
   const done = run({ url: REMOTE_CONFIG_URL, body: payload });
   assert.ok(done && done.body);
 
-  const out = asBuffer(done.body);
+  const out = doneBody(done);
   const cfg = getField(out, 1).payload;
   const values = getAll(cfg, 3).map(f => f.payload);
 
@@ -352,23 +387,68 @@ test('mode=ads chỉ chặn quảng cáo, không giả Premium', () => {
   assert.ok(done && done.body);
 
   const map = {};
-  for (const entry of getAll(asBuffer(done.body), 1)) {
+  for (const entry of getAll(doneBody(done), 1)) {
     map[str(getField(entry.payload, 1).payload)] = getField(entry.payload, 2).payload;
   }
   assert.strictEqual(JSON.stringify(map.ads), JSON.stringify(attrBool(false)));
   assert.strictEqual(JSON.stringify(map.type), JSON.stringify(attrStr('free')), 'không được giả Premium ở mode ads');
 });
 
-test('mode=off và status 304 đều passthrough không đổi body', () => {
+test('mode=off, status 304 và endpoint lạ đều passthrough NGUYÊN body gốc', () => {
+  // Khác biệt cốt lõi so với bản trước: binary-body-mode thì $done({}) là
+  // "body rỗng" chứ không phải "giữ nguyên" -> phải trả lại byte gốc.
   const payload = attributeMapField([['type', attrStr('free')]]);
-  const off = run({ url: ATTRIBUTES_URL, body: payload, argument: 'off' });
-  assert.deepStrictEqual(Object.keys(off), []);
 
+  assertPassthrough(run({ url: ATTRIBUTES_URL, body: payload, argument: 'off' }), payload);
+  assertPassthrough(
+    run({ url: 'https://spclient.wg.spotify.com/collection/v1/library', body: payload }),
+    payload
+  );
+
+  // 304 / body rỗng: không có gì để giữ nên {} là đúng.
   const notModified = run({ url: ATTRIBUTES_URL, body: Buffer.alloc(0), status: 304 });
   assert.deepStrictEqual(Object.keys(notModified), []);
+});
 
-  const wrongEndpoint = run({ url: 'https://spclient.wg.spotify.com/collection/v1/library', body: payload });
-  assert.deepStrictEqual(Object.keys(wrongEndpoint), []);
+test('$done trả Uint8Array với engine webview, ArrayBuffer với engine jsc', () => {
+  // webview (mặc định của Shadowrocket cho http-response): Uint8Array bridge được.
+  const webview = run({
+    url: ATTRIBUTES_URL,
+    body: attributeMapField([['type', attrStr('free')]]),
+    engine: 'webview'
+  });
+  assert.ok(webview.body instanceof Uint8Array, 'webview phải nhận Uint8Array');
+
+  // jsc: Uint8Array không bridge được qua Objective-C -> phải là ArrayBuffer.
+  const jsc = run({
+    url: ATTRIBUTES_URL,
+    body: attributeMapField([['type', attrStr('free')]]),
+    engine: 'jsc'
+  });
+  assert.ok(jsc.body instanceof ArrayBuffer, 'jsc phải nhận ArrayBuffer');
+
+  // Cả hai phải decode ra cùng một attribute map đã patch. Không so sánh byte
+  // tuyệt đối: payload có timestamp nên hai lần chạy khác nhau vài byte.
+  for (const res of [webview, jsc]) {
+    const map = {};
+    for (const entry of getAll(doneBody(res), 1)) {
+      map[str(getField(entry.payload, 1).payload)] = getField(entry.payload, 2).payload;
+    }
+    assert.strictEqual(JSON.stringify(map.type), JSON.stringify(attrStr('premium')));
+  }
+});
+
+test('không bao giờ kèm status/headers khi trả body (tránh lệch content-encoding)', () => {
+  const done = run({ url: ATTRIBUTES_URL, body: attributeMapField([['type', attrStr('free')]]) });
+  assert.deepStrictEqual(Object.keys(done).sort(), ['body'],
+    'chỉ được trả body; kèm headers gốc (gzip/content-length cũ) sẽ làm app giải nén sai');
+});
+
+test('argument=debug bật log chẩn đoán ngay trên máy thật', () => {
+  run({ url: ATTRIBUTES_URL, body: attributeMapField([['type', attrStr('free')]]), argument: 'debug' });
+  const logs = run.lastLogs.join('\n');
+  assert.match(logs, /hook chạy/, 'phải log hook có chạy - đây là thứ cần khi test trên điện thoại');
+  assert.match(logs, /head=/, 'phải log vài byte đầu để biết body có đúng protobuf không');
 });
 
 test('payload JSON (nếu server trả JSON) vẫn patch được', () => {
@@ -385,13 +465,12 @@ test('payload JSON (nếu server trả JSON) vẫn patch được', () => {
   assert.deepStrictEqual(parsed.accountAttributes.ads, { boolValue: false });
 });
 
-test('payload rác không làm script crash hay trả body sai', () => {
+test('payload rác không làm script crash và trả lại nguyên body gốc', () => {
   const garbage = Buffer.from([0xff, 0xff, 0xff, 0xff, 0x07]);
-  const done = run({ url: ATTRIBUTES_URL, body: garbage });
-  assert.deepStrictEqual(Object.keys(done), []);
+  assertPassthrough(run({ url: ATTRIBUTES_URL, body: garbage }), garbage);
 
   const truncated = Buffer.from([0x0a, 0x7f, 0x00]);
-  assert.deepStrictEqual(Object.keys(run({ url: BOOTSTRAP_URL, body: truncated })), []);
+  assertPassthrough(run({ url: BOOTSTRAP_URL, body: truncated }), truncated);
 });
 
 test('script không chứa mã độc/không gọi mạng ngoài', () => {

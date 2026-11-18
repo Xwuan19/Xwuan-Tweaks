@@ -54,4 +54,5 @@ Xwuan-Tweaks/
 4. **Kiểm thử trước khi push**:
    - Node tests: `node --test tests/*.test.js tests/*/*.test.js`
    - Go proxy tests: `go test ./tests/proxy/...`
-   - Spotify research: `node --test tests/research/spotify_ucs.test.js`
+   - Spotify research: `node --test tests/research/spotify_ucs.test.js tests/research/spotify_module_syntax.test.js`
+     (engine protobuf + cú pháp module Shadowrocket — xem `research/spotify/notes/shadowrocket-module-syntax.md`)

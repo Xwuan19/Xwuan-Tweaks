@@ -77,6 +77,47 @@ function spotifyLog(message) {
     }
 }
 
+/* Body của một response protobuf trên Shadowrocket là binary: runtime đưa vào
+ * dưới dạng vài kiểu khác nhau tuỳ phiên bản (Uint8Array / ArrayBuffer /
+ * Buffer-like / string ISO-8859-1). Hàm dưới đây nhận diện kiểu và trả về
+ * Uint8Array. Trả null khi không có body. */
+function shadowrocketBodyToBytes(body) {
+    if (body === null || body === undefined) return null;
+    if (typeof body === "string") {
+        if (body.length === 0) return null;
+        var out = new Uint8Array(body.length);
+        for (var i = 0; i < body.length; i++) out[i] = body.charCodeAt(i) & 0xff;
+        return out;
+    }
+    if (typeof Uint8Array !== "undefined" && body instanceof Uint8Array) {
+        return body.length ? body : null;
+    }
+    if (typeof ArrayBuffer !== "undefined") {
+        if (body instanceof ArrayBuffer) {
+            return body.byteLength ? new Uint8Array(body) : null;
+        }
+        if (typeof ArrayBuffer.isView === "function" && ArrayBuffer.isView(body)) {
+            var view = new Uint8Array(body.buffer, body.byteOffset || 0, body.byteLength);
+            return view.length ? view : null;
+        }
+    }
+    return null;
+}
+
+/* Chẩn đoán: mô tả kiểu + vài byte đầu của body, để log Shadowrocket cho biết
+ * ngay hook có chạy và body có đúng là protobuf hay không. Chỉ chạy khi
+ * SPOTIFY_DEBUG bật nên không tốn CPU lúc dùng hằng ngày. */
+function describeBodyForLog(bytes) {
+    if (!bytes) return "none";
+    var n = Math.min(12, bytes.length);
+    var parts = [];
+    for (var i = 0; i < n; i++) {
+        var h = bytes[i].toString(16);
+        parts.push(h.length < 2 ? "0" + h : h);
+    }
+    return bytes.length + " bytes, head=" + parts.join(" ");
+}
+
 /* ------------------------------------------------------------------ varint */
 
 function readVarint(buf, pos) {
@@ -1041,75 +1082,126 @@ function bytesToBodyString(bytes) {
     return parts.join("");
 }
 
+/* Gửi body protobuf đã patch về Shadowrocket.
+ *
+ * ĐÂY LÀ CHỖ DỄ HỎNG NHẤT và cũng là lý do module từng "không có tác dụng".
+ * Quy tắc rút ra từ runtime thật + các module binary đang chạy được:
+ *
+ *   1. KHÔNG BAO GIỜ dùng `$done({})` cho một request binary-body-mode.
+ *      Trong Shadowrocket, `$done({})` nghĩa là "thay body bằng rỗng", không
+ *      phải "giữ nguyên". Body rỗng -> Spotify nhận response 200 không nội
+ *      dung -> coi như chưa đăng nhập / loading mãi.
+ *   2. Chỉ trả `{ body: <binary> }`. TUYỆT ĐỐI không kèm `status`/`headers`
+ *      khi body đã bị giải nén: header gốc còn `content-encoding: gzip` và
+ *      `content-length` cũ, kèm vào là app giải nén sai -> hỏng body.
+ *   3. Kiểu của `body` phải khớp engine:
+ *        - `webview` (mặc định của Shadowrocket cho http-response): truyền
+ *          thẳng `Uint8Array`. Đây là kiểu an toàn nhất, không phụ thuộc
+ *          bảng mã.
+ *        - `jsc`: `Uint8Array` không được bridge qua Objective-C, phải đổi
+ *          sang `ArrayBuffer` (cũng có thể dùng string latin1, nhưng
+ *          ArrayBuffer không mất byte nào).
+ *
+ * Vì vậy hàm này trả ArrayBuffer khi phát hiện môi trường jsc, còn lại trả
+ * nguyên Uint8Array. */
+function buildDoneResponse(bytes) {
+    var isJsc = typeof $environment !== "undefined" && $environment &&
+        typeof $environment["engine"] === "string" &&
+        $environment["engine"].toLowerCase().indexOf("jsc") >= 0;
+
+    if (!isJsc) return { body: bytes };
+
+    /* jsc: copy sang ArrayBuffer có đúng độ dài. Không dùng bytes.buffer trực
+     * tiếp vì subarray có thể trỏ vào buffer lớn hơn (byteOffset != 0) và
+     * runtime sẽ đọc thừa byte rác ở đầu/cuối. */
+    var ab = new ArrayBuffer(bytes.length);
+    var view = new Uint8Array(ab);
+    for (var i = 0; i < bytes.length; i++) view[i] = bytes[i];
+    return { body: ab };
+}
+
+/* Passthrough đúng nghĩa: trả lại nguyên body gốc. Dùng cho mọi nhánh "không
+ * sửa gì" của script binary - xem quy tắc 1 ở trên. */
+function donePassthrough(bytes, reason) {
+    if (reason) spotifyLog("passthrough: " + reason);
+    if (!bytes || bytes.length === 0) {
+        /* Không có body để trả (ví dụ 304). Trường hợp này buộc phải dùng {}
+         * vì không có gì để giữ; body vốn đã rỗng nên không làm hỏng gì. */
+        return $done({});
+    }
+    return $done(buildDoneResponse(bytes));
+}
+
 function spotifyUcsMain() {
     var url = (typeof $request !== "undefined" && $request && $request.url) ? $request.url : "";
     var path = url.split("?")[0];
     var kind = detectKind(path);
 
-    if (!kind) {
-        spotifyLog("bỏ qua (không khớp endpoint): " + path);
-        return $done({});
-    }
+    /* Đọc body TRƯỚC mọi nhánh return. Mọi nhánh "bỏ qua" đều phải trả lại
+     * nguyên body: với binary-body-mode, $done({}) = body rỗng = hỏng response. */
+    var status = ($response && ($response.status || $response.statusCode)) || 0;
+    var rawBody = $response ? $response.body : null;
+    var bytes = bodyToBytes(rawBody);
 
+    /* Đọc argument TRƯỚC khi log, để `argument=debug` tự bật log ngay từ dòng
+     * đầu tiên. Trên điện thoại đây là cách duy nhất để biết hook có chạy. */
     var mode = SPOTIFY_PATCH_MODE;
     if (typeof $argument !== "undefined" && $argument) {
         var arg = String($argument).toLowerCase();
         if (arg === "off" || arg === "ads" || arg === "full") mode = arg;
-    }
-    if (mode === "off") {
-        spotifyLog("mode=off, passthrough");
-        return $done({});
+        /* Chấp nhận cả dạng "mode=ads&debug=true" như các module khác. */
+        if (/(^|[&,;\s])mode\s*[=:]\s*(off|ads|full)/.test(arg)) {
+            mode = arg.match(/(^|[&,;\s])mode\s*[=:]\s*(off|ads|full)/)[2];
+        }
+        if (arg.indexOf("debug") >= 0) SPOTIFY_DEBUG = true;
     }
 
-    var status = $response && ($response.status || $response.statusCode);
-    var body = $response ? $response.body : null;
+    if (SPOTIFY_DEBUG) {
+        spotifyLog("hook chạy: " + (kind || "endpoint lạ") + " | " + path);
+        spotifyLog("status=" + status + ", body=" + describeBodyForLog(bytes));
+        spotifyLog("engine=" + (typeof $environment !== "undefined" && $environment && $environment["engine"] ? $environment["engine"] : "không rõ") +
+            ", mode=" + mode + ", argument=" + (typeof $argument === "undefined" ? "(không set)" : String($argument)));
+    }
+
+    if (!kind) return donePassthrough(bytes, "endpoint không khớp: " + path);
+    if (mode === "off") return donePassthrough(bytes, "mode=off");
 
     if (status && status !== 200) {
-        /* 304 = body rỗng. Không có gì để patch; trả nguyên trạng để Spotify
-         * dùng cache của nó. [Header Rewrite] trong module đã xoá validator
-         * nên trường hợp này chỉ xảy ra khi server vẫn ép 304. */
-        spotifyLog("status " + status + " - không patch");
-        return $done({});
+        /* 304 = body rỗng, không có gì để patch. [Header Rewrite] trong module
+         * đã xoá validator nên trường hợp này chỉ xảy ra khi server vẫn ép 304. */
+        return donePassthrough(bytes, "status " + status);
     }
 
-    var bytes = bodyToBytes(body);
-    if (!bytes || bytes.length < 2) {
-        spotifyLog("body rỗng/không đọc được");
-        return $done({});
-    }
+    if (!bytes || bytes.length < 2) return donePassthrough(bytes, "body rỗng");
 
     /* Payload protobuf không bao giờ bắt đầu bằng "{" (0x7b). */
-    var looksJson = bytes[0] === 0x7b;
-    if (looksJson) {
-        if (!SPOTIFY_TRY_JSON) return $done({});
+    if (bytes[0] === 0x7b) {
+        if (!SPOTIFY_TRY_JSON) return donePassthrough(bytes, "JSON, không xử lý");
+        var patchedObj = null;
         try {
-            var obj = JSON.parse(bytesToBodyString(bytes));
-            var patchedObj = patchJsonObject(kind, obj, mode);
-            if (!patchedObj) {
-                spotifyLog(kind + ": JSON không có gì để sửa");
-                return $done({});
-            }
-            return $done({ body: JSON.stringify(patchedObj) });
+            patchedObj = patchJsonObject(kind, JSON.parse(bytesToBodyString(bytes)), mode);
         } catch (e) {
             spotifyLog("JSON lỗi: " + e);
-            return $done({});
+            return donePassthrough(bytes, "JSON lỗi");
         }
+        if (!patchedObj) return donePassthrough(bytes, kind + ": JSON không có gì để sửa");
+        spotifyLog(kind + ": JSON đã patch");
+        /* JSON là text: trả string như bình thường, runtime tự tính lại
+         * content-length. */
+        return $done({ body: JSON.stringify(patchedObj) });
     }
 
-    var patched;
+    var patched = null;
     try {
         patched = patchProtobuf(kind, bytes, mode);
     } catch (e) {
-        spotifyLog("decode/patch lỗi: " + e + " | " + e.stack);
-        return $done({});
+        spotifyLog("decode/patch lỗi: " + e + " | " + (e && e.stack));
+        return donePassthrough(bytes, "decode/patch lỗi");
     }
-    if (!patched) {
-        spotifyLog(kind + ": không có thay đổi");
-        return $done({});
-    }
+    if (!patched) return donePassthrough(bytes, kind + ": không có thay đổi");
 
     spotifyLog(kind + ": " + bytes.length + " -> " + patched.length + " bytes");
-    return $done({ body: bytesToBodyString(patched) });
+    return $done(buildDoneResponse(patched));
 }
 
 /* ============================================ GENERATED DATA (DO NOT EDIT) */
