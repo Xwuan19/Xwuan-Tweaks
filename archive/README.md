@@ -11,6 +11,7 @@ không dùng cho bản phát hành**.
 | `spotify/reference/modules/` | 3 module Spotify của tác giả khác | Tham chiếu cú pháp |
 | `spotify/reference/profiles/Spotify.mobileconfig` | Profile nhặt trên mạng | ⚠️ **Cài Root CA của người khác.** Đừng cài lại — xem cảnh báo dưới |
 | `spotify/reference/raw-data/` | Domain/endpoint thô | Nguyên liệu audit |
+| `reference/lamdev/` | 3 profile `LAMDev-LocketGold-VIP0{1,2,3}.mobileconfig` của bên thứ ba | Tham chiếu cấu trúc + đối chiếu. ⚠️ **Cài Root CA không có Name Constraints** — xem README riêng |
 
 ## ⚠️ Về `profiles/Spotify.mobileconfig`
 
