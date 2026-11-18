@@ -2,6 +2,7 @@
 ca/*.key
 proxy/ca/*.key
 *.key
+*.pfx
 
 # Fly & Vercel temp artifacts
 .vercel

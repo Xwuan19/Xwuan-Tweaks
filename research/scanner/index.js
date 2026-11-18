@@ -84,9 +84,9 @@ if (process.argv.includes('--self-check')) {
 const dns = require('dns').promises;
 
 if (require.main === module) {
-  const target = path.resolve(__dirname, '../shadowrocket');
+  const target = path.resolve(__dirname, '../../scripts');
   const res = scanDir(target);
-  console.log('=== Shadowrocket Endpoints & Domains ===');
+  console.log('=== Scripts Endpoints & Domains ===');
   console.log('Direct IPs:', res.ips.length ? res.ips : '(None directly hardcoded)');
   console.log('\nDetected Domains / Hosts:');
   

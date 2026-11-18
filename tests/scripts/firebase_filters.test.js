@@ -2,7 +2,7 @@ const fs = require('fs');
 const vm = require('vm');
 const assert = require('assert');
 
-const code = fs.readFileSync('shadowrocket/js/locket_firebase_response.js', 'utf8');
+const code = fs.readFileSync('scripts/locket_firebase_response.js', 'utf8');
 
 const mockObj = { entries: {} };
 let capturedDone = null;

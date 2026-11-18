@@ -1,44 +1,56 @@
-# 💛 Locket Gold Hub (Monorepo)
+# Xwuan-Tweaks
 
-Monorepo thống nhất toàn bộ giải pháp mở khóa Locket Gold (30s Video Real, Photobooth 4-cut, AI Likeness Filters, Trending Widget Frames):
+Tổng hợp module, script và hạ tầng mở khóa tính năng (hiện tại: **Locket Gold VIP** — quay video 60s có tiếng, Photobooth 4-cut, AI Likeness Filters, Khung Widget & Caption VIP, chặn quảng cáo) phát triển bởi **Xwuan** ([@Xwuan19](https://github.com/Xwuan19)).
 
 ---
 
-## 🏗️ Cấu Trúc Dự Án
+## Link Cài Đặt Chính Thức (Raw)
+
+Sao chép trực tiếp link **Raw** tương ứng với ứng dụng bạn đang dùng:
+
+| Tính năng | Ứng dụng | Link Raw cài đặt |
+| --- | --- | --- |
+| **Locket VIP (All-in-One)** | Shadowrocket | `https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/modules/Locket_VIP.module` |
+| **Locket VIP (RemoteConfig)** | Surge | `https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/modules/Locket_RemoteConfig.sgmodule` |
+| **Locket VIP (RemoteConfig)** | Loon | `https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/modules/Locket_RemoteConfig.plugin` |
+| **Locket VIP (RemoteConfig)** | Quantumult X | `https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/modules/Locket_RemoteConfig.snippet` |
+| **Locket VIP (RemoteConfig)** | Stash | `https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/modules/Locket_RemoteConfig.stoverride` |
+
+> [!IMPORTANT]
+> **2 bước bắt buộc để kích hoạt Locket VIP thành công:**
+> 1. Bật **Giải mã HTTPS (HTTPS Decryption / MitM)** và tin cậy chứng chỉ gốc trong `Cài đặt > Cài đặt chung > Giới thiệu > Cài đặt tin cậy chứng nhận`.
+> 2. **Xóa app Locket rồi tải lại từ App Store** ở lần cài đầu tiên để xóa cache SQLite của Firebase Remote Config (sau đó dùng bình thường không cần xóa lại).
+
+---
+
+## Cấu Trúc Thư Mục
 
 ```text
-locket-gold-hub/
-├── shadowrocket/          # 📱 Cơ chế 1: Client Rules (Shadowrocket / Loon / Surge)
-│   ├── js/                # Script xử lý Firebase RemoteConfig & RevenueCat
-│   ├── modules/           # Module cấu hình (.sgmodule, .plugin, .module)
-│   └── assets/            # Khung ảnh VIP (Low G, Kitty Shin, Citopia)
+Xwuan-Tweaks/
+├── modules/               # Chính thức: file cấu hình cài thẳng (.module, .sgmodule, .plugin, .snippet, .stoverride)
+├── scripts/               # Chính thức: mã nguồn JS đang hoạt động được modules/ trỏ tới
+├── assets/                # Chính thức: icon và khung ảnh VIP (frames/)
 │
-├── proxy/                 # ⚡ Cơ chế 2: Backend TLS MITM Proxy (Go on Fly.io)
-│   ├── handler/           # Xử lý tiêm tính năng tương đương Shadowrocket
-│   ├── tls/               # Cấp chứng chỉ SSL động (SNI Leaf Forging)
-│   └── Dockerfile         # Image deploy Fly.io
+├── research/              # Nghiên cứu: spotify/, reference_nightmarket/ & công cụ quét endpoint (scanner/)
+├── archive/               # Lưu trữ: scripts/ cũ & spotify-doh-demo/ (bản demo DoH cũ)
 │
-├── api/                   # 🌐 Serverless API (Vercel)
-│   ├── create-account.js  # Tự động cấp tài khoản NextDNS riêng biệt (300k query)
-│   ├── check-usage.js     # Theo dõi số lượng query và trạng thái thiết bị
-│   └── generate-profile.js# Sinh file .mobileconfig cài đặt trực tiếp
-│
-├── public/                # 💻 Web Portal (1-Click cài đặt không cần VPN)
-├── ca/                    # 🔐 Root CA Certificate
-└── fly.toml               # Cấu hình hạ tầng Fly.io
+├── public/                # Web Portal (Vercel — cài profile Xwuan_DNS.mobileconfig 1-click)
+├── api/                   # Vercel Serverless API
+├── admin/                 # Thư viện backend & tài nguyên quản trị DNS
+├── proxy/                 # Backend TLS MITM Proxy (Go trên Fly.io)
+├── ca/                    # Root CA Certificate
+├── nextdns/               # NextDNS API helper
+├── supabase/              # Cấu hình & migration Supabase
+└── tests/                 # Bộ kiểm thử tự động (Node & Go)
 ```
 
 ---
 
-## 🔄 Quy Trình Phát Triển (Workflow)
+## Quy Trình Phát Triển & Kiểm Thử
 
-1. **Thử nghiệm trên Shadowrocket/Loon (`shadowrocket/js`)**:
-   - Viết tính năng mới (filter, frame, bypass payload).
-   - Kiểm thử trực tiếp trên điện thoại bằng app proxy client.
-2. **Đồng bộ sang Go Proxy (`proxy/handler`)**:
-   - Khi logic hoạt động ổn định trên Shadowrocket, chuyển payload tương ứng vào `proxy/handler/firebase.go` hoặc `proxy/handler/revenuecat.go`.
-   - Chạy test xác nhận: `go test ./tests/proxy/...`
-3. **Deploy đồng bộ**:
-   - `shadowrocket`: commit và push lên GitHub (link raw tự động cập nhật).
-   - `proxy`: deploy tự động sang Fly.io (`flyctl deploy --app locket-proxy`).
-   - `web portal`: deploy tự động sang Vercel (`vercel deploy --prod`).
+1. **Nghiên cứu & thử nghiệm**: Lưu tài liệu phân tích, mẫu tham khảo hoặc công cụ quét tại `research/`.
+2. **Phát hành chính thức**: Đưa script đã test ổn định vào `scripts/`, gắn link Raw vào file cấu hình trong `modules/` và cập nhật bảng cài đặt ở trên. Chuyển bản cũ hết dùng sang `archive/`.
+3. **Đồng bộ Go Proxy**: Khi có payload mới, đồng bộ vào `proxy/handler/firebase.go` hoặc `proxy/handler/revenuecat.go`.
+4. **Kiểm thử trước khi push**:
+   - Node tests: `node --test tests/*.test.js tests/*/*.test.js`
+   - Go proxy tests: `go test ./tests/proxy/...`
