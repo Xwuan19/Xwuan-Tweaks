@@ -1,0 +1,67 @@
+#!name=Spotify Premium (Shadowrocket) — Xwuan Research
+#!desc=Mở khoá Premium phía network: patch protobuf UCS/Bootstrap/nebula attributes + chặn toàn bộ quảng cáo & upsell. Chặn logout/session-invalidation. Cần bật MITM và tin cậy CA Shadowrocket.
+#!author=Xwuan (research)
+#!category=Xwuan Research
+#!homepage=https://github.com/Xwuan19/Xwuan-Tweaks
+#
+# GIỚI HẠN QUAN TRỌNG - đọc trước khi dùng:
+# Module này chỉ can thiệp được lớp HTTP. EeveeSpotifyReincarnated còn vá cả
+# ObjC runtime trong app (117 hook group), UI layer và nhiều state cục bộ.
+# Vì vậy module KHÔNG đạt parity với tweak: offline/audio-quality/social-session
+# do server quyết định, không thể vượt qua bằng network rewriting.
+# Xem research/spotify/notes/eevee-reincarnated-audit.md
+
+[Rule]
+# --- Chặn QUIC để ép MITM bắt được (UDP:443 đi xuyên qua script hook) ---
+AND,((DOMAIN-SUFFIX,spotify.com),(PROTOCOL,QUIC)),REJECT
+
+# --- Telemetry & ad-tracking host (chặn theo host, không theo path) ---
+DOMAIN,aet.spotify.com,REJECT
+DOMAIN,ad.spotify.com,REJECT
+DOMAIN,ads.spotify.com,REJECT
+DOMAIN-SUFFIX,doubleclick.net,REJECT
+DOMAIN-SUFFIX,googlesyndication.com,REJECT
+
+# --- ClientMessagingPlatform (popup "welcome back", banner Home upsell) ---
+DOMAIN,adeventtracker.spotify.com,REJECT
+DOMAIN,gads.current.spotify.com,REJECT
+
+[URL Rewrite]
+# Chặn sớm các endpoint quảng cáo/upsell dạng JSON (rẻ hơn và sớm hơn script).
+# Danh sách bám theo URL+Extension.swift -> isAdRelated của EeveeSpotify 7.5.0.
+^https?:\/\/(?:[\w-]+-)?spclient\.spotify\.com(?::443)?\/(?:ads\/|ad-logic\/|dac\/view\/v1\/|esperanto\/[^?#]*(?:[Aa]d|[Ss]lot)) - reject
+^https?:\/\/(?:[\w-]+-)?spclient\.spotify\.com(?::443)?\/(?:ad-slot\/|ad-inventory\/|ad-on-app-open|ad-card\/|native-ad\/|display-ad\/|search-ad\/|search-ads\/|home-ad\/|home-ads\/) - reject
+^https?:\/\/(?:[\w-]+-)?spclient\.spotify\.com(?::443)?\/(?:sponsored\/|sponsored-content\/|sponsored-ad\/|sponsored-shelf\/|sponsored-row\/|sponsored-item\/|promoted\/) - reject
+^https?:\/\/(?:[\w-]+-)?spclient\.spotify\.com(?::443)?\/(?:upsell\/|premium-upsell|upsell-banner|upsell-card|referrals\/upsell|upgrade-component\/) - reject
+^https?:\/\/(?:[\w-]+-)?spclient\.spotify\.com(?::443)?\/(?:campaign\/|billboard\/|banner\/|interstitial\/|overlay\/|popup\/|pop-up\/|leaderboard\/|fullbleed\/) - reject
+^https?:\/\/(?:[\w-]+-)?spclient\.spotify\.com(?::443)?\/(?:merchandising\/|marketing\/|leavebehind|leave-behind|marquee\/) - reject
+# Premium marketing + trial facade + pendragon marketing messages
+^https?:\/\/(?:[\w-]+-)?spclient\.spotify\.com(?::443)?\/premium-marketing\/upsellOffer - reject-dict
+^https?:\/\/(?:[\w-]+-)?spclient\.spotify\.com(?::443)?\/trials-facade\/start-trial - reject-dict
+^https?:\/\/(?:[\w-]+-)?spclient\.spotify\.com(?::443)?\/pendragon\/[^?#]*FetchMessage - reject-dict
+
+[Header Rewrite]
+# Xoá cache validator để server trả 200 kèm body (nếu trả 304 thì không có gì để patch).
+# Đây chính là cơ chế NebulaAttributes.unconditional() của EeveeSpotify.
+# Dùng pattern rộng: host spclient thay đổi theo region (gae2/guc3/gew4/...).
+http-request ^https?:\/\/(?:[\w-]+-)?spclient\.spotify\.com(?::443)?\/.*\/(?:bootstrap|nebula|configuration|customize) header-del If-None-Match
+http-request ^https?:\/\/(?:[\w-]+-)?spclient\.spotify\.com(?::443)?\/.*\/(?:bootstrap|nebula|configuration|customize) header-del If-Modified-Since
+http-request ^https?:\/\/(?:[\w-]+-)?spclient\.spotify\.com(?::443)?\/.*\/(?:bootstrap|nebula|configuration|customize) header-del if-none-match
+http-request ^https?:\/\/(?:[\w-]+-)?spclient\.spotify\.com(?::443)?\/.*\/(?:bootstrap|nebula|configuration|customize) header-del if-modified-since
+
+[MITM]
+hostname = %APPEND% spclient.wg.spotify.com, *-spclient.spotify.com, spclient.spotify.com, apresolve.spotify.com
+
+[Script]
+# Engine protobuf tự chứa: scripts/spotify_ucs.js (không cần thư viện ngoài).
+# - bootstrap/v1/bootstrap        : BootstrapMessage{2:{1:{1:CustomizeMessage}}}
+# - user-customization-service    : UcsResponseWrapper
+# - nebula/v1/configuration/attributes : AccountAttributesResponse
+# - remote-config-resolver/vN/configuration : ResolveResponse (crossfade/automix)
+#
+# argument=full | ads | off  (mặc định full)
+# Đổi "_full" cuối URL thành "_ads" nếu chỉ muốn chặn quảng cáo mà không giả Premium.
+spotify-bootstrap = type=http-response, pattern=^https?:\/\/(?:[\w-]+-)?spclient\.spotify\.com(?::443)?\/.*\/v1\/bootstrap, script-path=https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/research/spotify/scripts/spotify_ucs.js?v=20261118_1, requires-body=true, binary-body-mode=true, max-size=-1, timeout=30, argument=full
+spotify-customize = type=http-response, pattern=^https?:\/\/(?:[\w-]+-)?spclient\.spotify\.com(?::443)?\/.*\/v1\/customize, script-path=https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/research/spotify/scripts/spotify_ucs.js?v=20261118_1, requires-body=true, binary-body-mode=true, max-size=-1, timeout=30, argument=full
+spotify-nebula = type=http-response, pattern=^https?:\/\/(?:[\w-]+-)?spclient\.spotify\.com(?::443)?\/.*\/nebula\/v\d+\/configuration\/attributes, script-path=https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/research/spotify/scripts/spotify_ucs.js?v=20261118_1, requires-body=true, binary-body-mode=true, max-size=-1, timeout=30, argument=full
+spotify-remote-config = type=http-response, pattern=^https?:\/\/(?:[\w-]+-)?spclient\.spotify\.com(?::443)?\/.*\/remote-config-resolver\/v\d+\/configuration, script-path=https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/research/spotify/scripts/spotify_ucs.js?v=20261118_1, requires-body=true, binary-body-mode=true, max-size=-1, timeout=30, argument=full
