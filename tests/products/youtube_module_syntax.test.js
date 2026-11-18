@@ -50,34 +50,49 @@ test('không có BOM và không có CRLF', () => {
 
 // ─── [Script] ──────────────────────────────────────────────────────────────
 
-test('[Script] mỗi hook có requires-body=1 và binary-body-mode=1', () => {
+test('[Script] mỗi hook http-response có requires-body=1 và binary-body-mode=1', () => {
   const scripts = S['Script'];
   assert.ok(scripts && scripts.length >= 5, 'phải có ít nhất 5 hook');
-  scripts.forEach(({ line, text }) => {
+  const resp = scripts.filter(({ text }) => /type=http-response/.test(text));
+  assert.strictEqual(resp.length, scripts.length - 1, 'chỉ self-test được là http-request');
+  resp.forEach(({ line, text }) => {
     assert.match(text, /^[\w-]+\s*=\s*type=http-response,/, `dòng ${line}: phải là http-response`);
     assert.match(text, /requires-body=1/, `dòng ${line}: thiếu requires-body=1 → body rỗng`);
     assert.match(text, /binary-body-mode=1/, `dòng ${line}: thiếu binary-body-mode=1 → protobuf bị cắt`);
   });
 });
 
-test('[Script] không dùng engine=jsc cho hook binary', () => {
-  (S['Script'] || []).forEach(({ line, text }) => {
-    assert.ok(!/engine=jsc/.test(text), `dòng ${line}: jsc không bridge được Uint8Array`);
+test('[Script] hook binary khai engine=jsc và máy đọc bodyBytes tương ứng', () => {
+  // Đổi kết luận sau khi đối chiếu hmxxgit/shadowrocket-youtube-adblock: bản
+  // tương thích Shadowrocket đầy đủ nhất khai `engine=jsc` + đọc
+  // `$response.bodyBytes` + trả `{bodyBytes: ArrayBuffer}`. Trước đó repo này
+  // để mặc định webview, và engine trả `{body}` — sai với binary-body-mode.
+  const bin = (S['Script'] || []).filter(({ text }) => /binary-body-mode=1/.test(text));
+  assert.ok(bin.length >= 5, 'phải có hook binary');
+  bin.forEach(({ line, text }) => {
+    assert.match(text, /engine=jsc/, `dòng ${line}: hook binary phải khai engine=jsc`);
+    assert.match(text, /max-size=-1/, `dòng ${line}: bản tương thích dùng max-size=-1`);
   });
 });
 
-test('[Script] max-size là số dương, không phải 0 hay -1', () => {
+test('[Script] có hook self-test kiểu http-request (Shadowrocket chạy được)', () => {
+  const req = (S['Script'] || []).filter(({ text }) => /type=http-request/.test(text));
+  assert.strictEqual(req.length, 1, 'phải có đúng 1 hook http-request cho self-test');
+  assert.match(req[0].text, /youtube_selftest\.js/, 'self-test phải trỏ tới youtube_selftest.js');
+});
+
+test('[Script] max-size hợp lệ (-1 hoặc số dương), không dùng 0', () => {
   (S['Script'] || []).forEach(({ line, text }) => {
     const m = text.match(/max-size=(-?\d+)/);
-    assert.ok(m, `dòng ${line}: thiếu max-size`);
-    assert.ok(Number(m[1]) > 0, `dòng ${line}: max-size phải > 0 (gặp ${m[1]})`);
+    if (!m) return; // hook http-request của self-test không cần body
+    assert.notStrictEqual(Number(m[1]), 0, `dòng ${line}: max-size=0 mơ hồ giữa "vô hạn" và "bị cắt"`);
   });
 });
 
 test('[Script] script-path trỏ tới engine có thật và có ?v= chống cache', () => {
   const engineRaw = 'https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/'
     + 'products/youtube/engine/youtube_adblock.js';
-  (S['Script'] || []).forEach(({ line, text }) => {
+  (S['Script'] || []).filter(({ text }) => /type=http-response/.test(text)).forEach(({ line, text }) => {
     const m = text.match(/script-path=([^,]+)/);
     assert.ok(m, `dòng ${line}: thiếu script-path`);
     const url = m[1];
@@ -126,15 +141,29 @@ test('[Rule] dùng PROTOCOL,UDP chứ không phải PROTOCOL,QUIC', () => {
 
 // ─── [URL Rewrite] ─────────────────────────────────────────────────────────
 
-test('[URL Rewrite] dùng dấu _ phân cách và action reject-200', () => {
-  const rewrites = S['URL Rewrite'] || [];
-  assert.ok(rewrites.length > 0, 'thiếu section [URL Rewrite]');
+test('[Url Rewrite] đúng cú pháp và có luật &oad của Maasea/hmxxgit', () => {
+  // Tên section viết đúng như Maasea và hmxxgit dùng: [Url Rewrite].
+  const rewrites = S['Url Rewrite'] || [];
+  assert.ok(rewrites.length > 0, 'thiếu section [Url Rewrite] (chú ý chữ U thường)');
+
+  const statsEndpoints = [];
   rewrites.forEach(({ line, text }) => {
-    assert.match(text, /^(\^|https?:)/, `dòng ${line}: phải bắt đầu bằng regex URL`);
-    const m = text.match(/\s_\s(\S+)\s*$/);
-    assert.ok(m, `dòng ${line}: thiếu " _ <action>" — thiếu _ thì cả dòng bị coi là regex`);
-    assert.strictEqual(m[1], 'reject-200', `dòng ${line}: chỉ dùng reject-200 (gặp ${m[1]})`);
+    assert.match(text, /^(\^|\(\^|https?:)/, `dòng ${line}: phải bắt đầu bằng regex URL`);
+    // Hai dạng hợp lệ: `<regex> _ reject-200` và `<regex> $1$2$3 302`
+    const reject = text.match(/\s_\s(\S+)\s*$/);
+    const redirect = text.match(/\s(\$1\S*)\s+302\s*$/);
+    assert.ok(reject || redirect, `dòng ${line}: sai cú pháp (cần " _ reject-200" hoặc "$1$2$3 302")`);
+    if (reject) assert.strictEqual(reject[1], 'reject-200', `dòng ${line}: chỉ reject-200`);
+    if (/api\\?\/stats\\?\/ads/.test(text)) statsEndpoints.push(text);
   });
+
+  const joined = rewrites.map((r) => r.text).join('\n');
+  // Đây là chỗ bản đầu của module thiếu — Maasea và hmxxgit đều có.
+  assert.ok(/&oad/.test(joined), 'thiếu luật chặn &oad (video ad) — Maasea/hmxxgit đều có');
+  assert.ok(/googlevideo/.test(joined), 'thiếu luật cho googlevideo.com');
+  assert.ok(/youtube\\.com/.test(joined), 'thiếu luật cho youtube.com');
+  assert.ok(/ctier=L/.test(joined), 'thiếu luật bỏ &ctier=L');
+  assert.ok(statsEndpoints.length >= 1, 'thiếu luật chặn /api/stats/ads');
 });
 
 // ─── engine ↔ module ───────────────────────────────────────────────────────
@@ -155,7 +184,7 @@ test('engine không bao giờ dùng $done({}) làm passthrough', () => {
     .replace(/(^|[^:])\/\/.*$/gm, '$1');
   // $done({}) chỉ được phép ở đúng một chỗ: khi body vốn đã rỗng (304).
   const bare = code.match(/\$done\(\{\}\)/g) || [];
-  assert.strictEqual(bare.length, 1, 'chỉ được có 1 chỗ $done({}) — nhánh body rỗng');
+  assert.ok(bare.length <= 2, 'chỉ được $done({}) ở nhánh body rỗng và fallback exception');
   assert.match(src, /function donePassthrough/, 'phải có donePassthrough trả body gốc');
 });
 

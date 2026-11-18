@@ -321,13 +321,111 @@ function dropShortsAds(buf) {
     if (removed === 0) return { bytes: buf, removed: 0 };
     return { bytes: concatChunks(chunks), removed: removed };
 }
+/* ============================================================
+// CHẨN ĐOÁN — không xem được log thì đọc được ở đây
+// ============================================================ */
+
+/* Vì sao cần khối này: Shadowrocket KHÔNG có trình xem log script.
+ *  - `数据 > 代理` chỉ ghi nhận kết nối (URL / rule / protocol / có MITM hay
+ *    không), không có console.log của script.
+ *  - `$notification.post` không có trong runtime Shadowrocket (đây là API của
+ *    Surge/Loon/QuanX). Kiểm tra: typeof $notification === "undefined".
+ * Không có kênh nào khác để xuất dữ liệu ra khỏi sandbox nếu không dùng mạng
+ * hoặc store. Nên dùng cả hai cái còn lại:
+ *
+ *  1. $persistentStore — đọc lại được từ một script HTTP-REQUEST (chạy được
+ *     trên Shadowrocket, khác với script event). Đó là `youtube_selftest.js`.
+ *  2. Mạng thật — khi argument=probe, gửi một GET kèm query ngắn tới đúng
+ *     host youtubei.googleapis.com. Nó hiện thành 1 dòng trong
+ *     `数据 > 代理` với URL đọc được → bằng chứng hook ĐÃ CHẠY.
+ *
+ * Không bao giờ gửi body, cookie, hay URL gốc ra ngoài. */
+
+var STORE_KEY = 'XwuanYTDiag';
+var PROBE_HOST = 'https://youtubei.googleapis.com/youtubei/v1/keepalive';
+
+function readDiag() {
+    try {
+        if (typeof $persistentStore === 'undefined' || !$persistentStore.read) return null;
+        var raw = $persistentStore.read(STORE_KEY);
+        if (!raw) return null;
+        if (typeof raw === 'string') return JSON.parse(raw);
+        return raw;
+    } catch (e) {
+        return null;
+    }
+}
+
+function writeDiag(rec) {
+    try {
+        if (typeof $persistentStore === 'undefined' || !$persistentStore.write) return;
+        $persistentStore.write(JSON.stringify(rec), STORE_KEY);
+    } catch (e) {}
+}
+
+/* Cập nhật bản ghi chẩn đoán. Gọi ở mọi nhánh — kể cả nhánh thoát sớm, để
+ * biết hook có chạy mà không có body hay không. */
+function diagTick(phase, patch) {
+    var rec = readDiag() || {};
+    rec.version = '1';
+    rec.lastAt = Date.now();
+    rec.events = (rec.events || 0) + 1;
+    rec.lastPhase = phase;
+    if (patch) {
+        for (var k in patch) {
+            if (Object.prototype.hasOwnProperty.call(patch, k)) rec[k] = patch[k];
+        }
+    }
+    writeDiag(rec);
+    return rec;
+}
+
+/* Gửi một GET rỗng tới đúng host InnerTube với query là kết quả chẩn đoán.
+ * Mục đích duy nhất: tạo một dòng trong log kết nối của Shadowrocket, vì đó
+ * là kênh duy nhất người dùng đọc được. Không kèm body/cookie. */
+function sendProbe(rec) {
+    try {
+        if (typeof $httpClient === 'undefined' || !$httpClient.get) return false;
+        var q = '?xwuan=probe'
+            + '&hook=' + encodeURIComponent(String(rec.hook || '-'))
+            + '&in=' + encodeURIComponent(String(rec.inBytes || 0))
+            + '&out=' + encodeURIComponent(String(rec.outBytes || 0))
+            + '&rm=' + encodeURIComponent(String(rec.removed || 0))
+            + '&st=' + encodeURIComponent(String(rec.reason || '-'));
+        $httpClient.get({
+            url: PROBE_HOST + q,
+            headers: { 'User-Agent': 'XwuanYT-Diag/1' }
+        }, function () {});
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
 
 /* ============================================================
 // ENTRY
 // ============================================================ */
 
-/* Body của Shadowrocket có thể về dưới nhiều dạng. Chép lại đúng logic đã
- * kiểm chứng trong products/spotify/on-device/engine/spotify_ucs.js. */
+/* Chuyển giá trị body về Uint8Array. Thứ tự thử quan trọng.
+ *
+ * Thứ tự lấy nguồn body khi chạy thật:
+ *   1. `$response.bodyBytes`  <-- Shadowrocket để body nhị phân ở ĐÂY
+ *   2. `$response.body`       <-- Surge/Loon, hoặc Shadowrocket ở một số bản
+ *   3. `$response.body` dạng base64 (một số client) — thử sau cùng
+ *
+ * Bài học từ module tương thích của hmxxgit/shadowrocket-youtube-adblock
+ * (Apache-2.0): họ khai `binary-body-mode=1` + `engine=jsc` và đọc
+ * `F.response.bodyBytes`. Nếu chỉ đọc `.body`, Shadowrocket có thể trả
+ * string ISO-8859-1 nên protobuf vẫn đi, nhưng khi app thêm `$done({body})`
+ * thì bytes bị đổi mã. BodyBytes là đường chắc chắn nhất. */
+function pickBodySource() {
+    var res = (typeof $response !== 'undefined' && $response) ? $response : null;
+    if (!res) return null;
+    if (res.bodyBytes !== undefined && res.bodyBytes !== null) return res.bodyBytes;
+    if (res.body !== undefined && res.body !== null) return res.body;
+    return null;
+}
+
 function bodyToBytes(body) {
     if (!body) return null;
     if (body instanceof Uint8Array) return body;
@@ -345,85 +443,132 @@ function bodyToBytes(body) {
     return null;
 }
 
-/* Trả body đã sửa. Kiểu phải khớp engine:
- *   webview (mặc định cho http-response): Uint8Array bridge được
- *   jsc: bắt buộc ArrayBuffer, Uint8Array không bridge qua ObjC
- * Xem products/spotify/audit/shadowrocket-module-syntax.md mục 2. */
+/* Trả body đã sửa cho Shadowrocket.
+ *
+ * QUY TẮC (đã trả giá bằng một bản module im lặng):
+ *   - `binary-body-mode`  => trả `bodyBytes` (không phải `body`)
+ *   - `$done({})` KHÔNG phải passthrough — nó xoá body
+ *   - không kèm `status`/`headers` khi body đã bị giải nén
+ *
+ * `engine`: hmxxgit khai `engine=jsc` và trả về một object có `.bodyBytes`.
+ * Với `jsc` thì `Uint8Array` không bridge qua ObjC, phải là `ArrayBuffer`.
+ * Vì vậy: jsc -> bodyBytes = ArrayBuffer; webview -> bodyBytes = Uint8Array. */
 function buildDoneResponse(bytes) {
     var isJsc = typeof $environment !== 'undefined' && $environment &&
         typeof $environment['engine'] === 'string' &&
         $environment['engine'].toLowerCase().indexOf('jsc') >= 0;
 
-    if (!isJsc) return { body: bytes };
+    if (!isJsc) return { bodyBytes: bytes };
 
     var ab = new ArrayBuffer(bytes.length);
     var view = new Uint8Array(ab);
     for (var i = 0; i < bytes.length; i++) view[i] = bytes[i];
-    return { body: ab };
+    return { bodyBytes: ab };
 }
 
-/* Passthrough: LUÔN trả nguyên body gốc. `$done({})` sẽ xoá body. */
+/* Passthrough: LUÔN trả nguyên body gốc, đúng kênh. */
 function donePassthrough(bytes, reason) {
-    if (reason) ytLog('passthrough: ' + reason);
     if (!bytes || bytes.length === 0) return $done({});
     return $done(buildDoneResponse(bytes));
 }
 
 function parseArgs() {
     var raw = (typeof $argument !== 'undefined' && $argument) ? String($argument) : '';
-    var out = { mode: 'ads', debug: false };
+    var out = { mode: 'ads', debug: false, probe: false };
     var parts = raw.split('&');
     for (var i = 0; i < parts.length; i++) {
         var kv = parts[i].split('=');
         var k = (kv[0] || '').trim();
         var v = (kv[1] || '').trim();
         if (k === 'debug') out.debug = (v === 'true' || v === '1' || v === '');
+        else if (k === 'probe') out.probe = (v === 'true' || v === '1' || v === '');
         else if (k === 'mode' && v) out.mode = v;
     }
     return out;
+}
+
+function endpointOf(path) {
+    var seg = path.split('/');
+    var last = seg[seg.length - 1] || '';
+    var prev = seg[seg.length - 2] || '';
+    return prev + '/' + last;
 }
 
 function youtubeMain() {
     var args = parseArgs();
     var url = (typeof $request !== 'undefined' && $request && $request.url) ? $request.url : '';
     var path = url.split('?')[0];
+    var hook = endpointOf(path);
 
-    var bytes = bodyToBytes(
-        (typeof $response !== 'undefined' && $response) ? $response.body : null
-    );
+    /* ---- Giai đoạn 1: có body không? ---- */
+    var raw = pickBodySource();
+    var source = (typeof $response !== 'undefined' && $response && $response.bodyBytes !== undefined
+        && $response.bodyBytes !== null) ? 'bodyBytes' : 'body';
+    var bytes = bodyToBytes(raw);
+
     if (!bytes || bytes.length === 0) {
-        return donePassthrough(bytes, 'body rỗng (304? hoặc thiếu requires-body)');
+        var recNoBody = diagTick('no-body', {
+            hook: hook, reason: 'missing_body', source: source, inBytes: 0, outBytes: 0, removed: 0
+        });
+        if (args.debug || args.probe) sendProbe(recNoBody);
+        return donePassthrough(bytes, 'missing_body');
     }
-    if (args.debug) {
-        ytLog('hook: ' + path + ' | body=' + bytes.length + ' bytes | head=' +
-            bytes[0].toString(16) + ' ' + (bytes[1] || 0).toString(16));
-    }
-    if (args.mode === 'off') return donePassthrough(bytes, 'mode=off');
 
+    if (args.mode === 'off') {
+        diagTick('mode-off', { hook: hook, reason: 'mode_off', source: source, inBytes: bytes.length });
+        return donePassthrough(bytes, 'mode_off');
+    }
+
+    /* ---- Giai đoạn 2: parse + sửa ---- */
     var result = null;
+    var reason = 'endpoint_not_handled';
 
     if (path.indexOf('/youtubei/v1/player') >= 0) {
+        reason = 'player';
         result = cleanPlayer(bytes, 0, bytes.length);
     } else if (path.indexOf('/youtubei/v1/get_watch') >= 0) {
-        /* /get_watch bọc player ở field 1 → field 2. Đệ quy tìm player. */
+        reason = 'get_watch';
         result = pruneAds(bytes, 0, bytes.length, 0);
         if (result && result.removed === 0) {
             var nested = cleanPlayerNested(bytes);
             if (nested) result = nested;
         }
     } else if (path.indexOf('/reel_watch_sequence') >= 0) {
+        reason = 'shorts';
         result = dropShortsAds(bytes);
     } else if (path.indexOf('/youtubei/v1/browse') >= 0 ||
                path.indexOf('/youtubei/v1/next') >= 0 ||
                path.indexOf('/youtubei/v1/search') >= 0) {
+        reason = 'feed';
         result = pruneAds(bytes, 0, bytes.length, 0);
     }
 
-    if (!result) return donePassthrough(bytes, 'endpoint không xử lý hoặc cấu trúc lạ');
-    if (result.removed === 0) return donePassthrough(bytes, 'không có ad');
+    if (!result) {
+        var recBad = diagTick('parse-fail', {
+            hook: hook, reason: 'parse_fail', source: source,
+            inBytes: bytes.length, outBytes: 0, removed: 0
+        });
+        if (args.debug || args.probe) sendProbe(recBad);
+        return donePassthrough(bytes, 'parse_fail');
+    }
 
-    ytLog('đã xoá ' + result.removed + ' mục | ' + bytes.length + ' -> ' +
-        result.bytes.length + ' bytes | ' + path);
+    /* ---- Giai đoạn 3: kết quả ---- */
+    var rec = diagTick(result.removed > 0 ? 'patched' : 'no-ad', {
+        hook: hook,
+        reason: result.removed > 0 ? 'patched' : 'no_ad',
+        source: source,
+        inBytes: bytes.length,
+        outBytes: result.removed > 0 ? result.bytes.length : bytes.length,
+        removed: result.removed,
+        route: reason
+    });
+
+    /* probe: gửi dù có sửa hay không, để phân biệt "hook chạy nhưng không có
+     * ad" với "hook không chạy". Đây chính là câu hỏi khó nhất khi không có
+     * log. */
+    if (args.probe) sendProbe(rec);
+
+    if (result.removed === 0) return donePassthrough(bytes, 'no_ad');
     return $done(buildDoneResponse(result.bytes));
 }
 
@@ -466,8 +611,7 @@ function cleanPlayerNested(buf) {
     return { bytes: concatChunks(chunks), removed: removed };
 }
 
-/* Phần export cho test Node. Trong Shadowrocket thì `$request` tồn tại và
- * module.exports vô nghĩa nên nhánh này không chạy. */
+/* Phần export cho test Node. */
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         readVarint: readVarint,
@@ -478,19 +622,30 @@ if (typeof module !== 'undefined' && module.exports) {
         cleanPlayer: cleanPlayer,
         pruneAds: pruneAds,
         dropShortsAds: dropShortsAds,
+        cleanPlayerNested: cleanPlayerNested,
         bodyToBytes: bodyToBytes,
+        buildDoneResponse: buildDoneResponse,
+        parseArgs: parseArgs,
         FIELD_AD_PLACEMENTS: FIELD_AD_PLACEMENTS,
         FIELD_AD_SLOTS: FIELD_AD_SLOTS,
-        FIELD_ELEMENT_RENDERER: FIELD_ELEMENT_RENDERER
+        FIELD_ELEMENT_RENDERER: FIELD_ELEMENT_RENDERER,
+        STORE_KEY: STORE_KEY
     };
 }
 
+/* Entry: chỉ chạy khi có runtime. try/catch/finally để MỌI nhánh đều trả body
+ * — không có `finally` thì một exception ở giữa sẽ làm request treo tới
+ * timeout 60 s, app chờ, người dùng thấy YouTube "quay mãi". */
 if (typeof $request !== 'undefined') {
     try {
         youtubeMain();
     } catch (e) {
-        ytLog('fatal: ' + e + ' | ' + (e && e.stack));
-        var safe = bodyToBytes((typeof $response !== 'undefined' && $response) ? $response.body : null);
-        donePassthrough(safe, 'exception');
+        try { diagTick('exception', { reason: 'exception', hook: 'fatal' }); } catch (_) {}
+        try {
+            var safe = bodyToBytes(pickBodySource());
+            donePassthrough(safe, 'exception');
+        } catch (e2) {
+            $done({});
+        }
     }
 }

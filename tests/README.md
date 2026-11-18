@@ -1,7 +1,7 @@
 # `tests/` — bộ kiểm thử
 
 ```bash
-node --test $(find tests -name '*.test.js')   # 64 test
+node --test $(find tests -name '*.test.js')   # 83 test
 go test ./tests/proxy/...                        # cần Go
 ```
 
@@ -11,7 +11,7 @@ go test ./tests/proxy/...                        # cần Go
 |---|---|---|
 | `admin/` | nextdns, mobileconfig (sinh profile DoH), camera_filter_config | 7 |
 | `research/` | engine protobuf Spotify + cú pháp module Shadowrocket | 23 |
-| `products/` | engine chặn quảng cáo YouTube (protobuf) + cú pháp module | 31 |
+| `products/` | engine YouTube: protobuf + cú pháp module + kênh chẩn đoán | 50 |
 | `scripts/` | filter trong `locket_firebase_response.js` | 1 |
 | `proxy/` | Go handler (chưa từng chạy trong môi trường này — không có Go) | ? |
 

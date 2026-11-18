@@ -56,7 +56,15 @@ Nói gọn: **module mạng sửa được "server trả gì", không sửa đư
 
 Cả ba đều **inject vào app** nên không chạy nếu không sideload IPA. Chúng sửa được nhiều hơn hẳn — nhưng đổi lại user phải cài IPA đã patch, mất cập nhật App Store, và chấp nhận rủi ro tài khoản.
 
-**Nguồn thật sự dùng được cho module mạng** là hai MITM server viết bằng Go, đều công khai và có code đọc được:
+**Nguồn thật sự dùng được cho module mạng:**
+
+| Repo | Giấy phép | Đóng góp |
+|---|---|---|
+| [hmxxgit/shadowrocket-youtube-adblock](https://github.com/hmxxgit/shadowrocket-youtube-adblock) | **Apache-2.0** | ⭐ Bản **tương thích Shadowrocket đầy đủ nhất**. Có `DIAGNOSTICS.md`, bộ test A/B/C/D/E (baseline / no-feed / no-udp / no-rewrite / no-script), và bộ tham số đã chạy thật: `engine=jsc` + `bodyBytes` + `{bodyBytes}`. Cũng là nguồn của luật `&oad` và khái niệm probe. |
+| [Maasea/sgmodule](https://github.com/Maasea/sgmodule) (bản lưu: [YanbingJiang](https://github.com/YanbingJiang/Shadowrocket_diy_rules) ★149) | — | Module YouTube lâu đời nhất và phổ biến nhất. Nguồn của `[Url Rewrite]` `&oad` + `ctier` 302 + `api/stats/ads`. |
+| [app2smile/rules](https://github.com/app2smile/rules) ★4153 | MIT | `youtube.sgmodule` — khung tối thiểu, chỉ `browse` + `next` |
+
+**Nguồn cho số field protobuf** là hai MITM server viết bằng Go, đều công khai và có code đọc được:
 
 | Repo | Giấy phép | Đóng góp |
 |---|---|---|
@@ -66,6 +74,21 @@ Cả ba đều **inject vào app** nên không chạy nếu không sideload IPA.
 Từ hai nguồn đó mới chốt được **số field chính xác** (7 và 68). Không có bước này thì mọi module protobuf đều phải đoán, và đoán sai thì hoặc không chặn được gì, hoặc xoá mất nội dung thật.
 
 Giấy phép của repo này là gì thì xem `README.md` gốc — nhưng lưu ý: ý tưởng/số field protobuf **không** thuộc phạm vi bảo hộ giống như code. Phần engine ở đây viết lại từ đầu, không dán dòng nào của GPL-3.0.
+
+## So với bản của hmxxgit
+
+Bản của họ dùng lại (vendor) engine của Maasea — hơn 300 KB JS, kèm cả `youtube.ump.js` và bộ giải mã base64/TextDecoder. Module này viết lại từ đầu, chỉ đụng wire format:
+
+| | hmxxgit | Module này |
+|---|---|---|
+| Kích thước engine | ~310 KB (vendor Maasea) | **18 KB** |
+| Phụ thuộc | vendor + build step | 0 |
+| Số field protobuf có nguồn | vendor | đối chiếu 2 MITM Go |
+| Chẩn đoán | `DIAGNOSTICS.md` + module riêng | `probe=true` + `youtube_selftest.js` |
+| SponsorBlock, PiP, download | ❌ không (vẫn cần tweak) | ❌ không |
+| GPL-3.0 | không (Apache-2.0) | **không dính GPL** |
+
+Đổi lại họ làm nhiều hơn: `guide`, `account/get_setting`, UMP (mã hoá initplayback), caption translation, chặn upload/immersive. Nếu cần những thứ đó thì dùng bản của họ — nó đã được test trên máy thật nhiều hơn.
 
 ## Kiến trúc
 
@@ -93,20 +116,72 @@ Quy tắc an toàn:
 
 **Không bao giờ** trả `body` rỗng cho một hook `binary-body-mode`: trong Shadowrocket, `$done({})` nghĩa là "thay body bằng rỗng", không phải "giữ nguyên". Đây là lỗi đã làm bản Spotify đầu tiên im lặng hoàn toàn.
 
-## Chẩn đoán trên điện thoại
+## Chẩn đoán trên điện thoại — Shadowrocket KHÔNG có log script
 
-Sửa `argument` trong module thành `ads&debug=true` (Config > 模块 > module > 编辑参数), mở YouTube, xem log Shadowrocket:
+Đây là điểm nhiều module làm sai và người dùng tưởng module hỏng. Thực tế:
 
-| Log | Nghĩa |
+| Kênh | Có trên Shadowrocket? |
 |---|---|
-| `[youtube-adblock] hook: /youtubei/v1/player \| body=NNN bytes \| head=0a 00` | Hook khớp ✅ |
-| `đã xoá N mục \| A -> B bytes` | Patch có tác dụng ✅ |
-| `passthrough: không có ad` | Hook chạy nhưng response này không có quảng cáo (bình thường) |
-| `passthrough: body rỗng (304?)` | `requires-body` thiếu, hoặc QUIC chưa chặn → xem mục 3 điều kiện |
-| **không có log nào** | Pattern không khớp, hoặc host chưa được MITM giải mã |
-| `passthrough: exception` | Gửi log kèm vài dòng `head=` để soi wire format |
+| `console.log` → trình xem log script | ❌ **không có**. `数据 > 代理` chỉ ghi kết nối (URL / rule / protocol / MITM), không có output của script |
+| `$notification.post` | ❌ **không tồn tại** — đây là API của Surge/Loon/QuanX |
+| `$persistentStore` | ✅ có |
+| `$httpClient` | ✅ có |
+| URL rewrite của script `http-request` | ✅ có — và URL đó **hiện trong log kết nối** |
 
-Xong thì đổi lại `argument=ads` để tắt log.
+Nên module có 2 kênh đọc được, cả hai đều dùng thứ Shadowrocket thật sự có.
+
+### Cách 1 — probe: đọc trực tiếp trong `数据 > 代理`
+
+Sửa `argument` của module thành:
+
+```
+ads&probe=true
+```
+
+Mở vài video (có quảng cáo), rồi vào **数据 > 代理**, tìm dòng:
+
+```
+youtubei.googleapis.com/youtubei/v1/keepalive?xwuan=probe&hook=v1%2Fplayer&in=8842&out=6103&rm=2&st=patched
+```
+
+| Tham số | Nghĩa |
+|---|---|
+| `hook=` | Hook đã chạy ở endpoint nào. **Không có dòng nào = hook không chạy.** |
+| `in=` | Số byte body nhận được. `0` = không có body (thiếu `requires-body`, hoặc QUIC chưa chặn) |
+| `out=` | Số byte sau khi sửa |
+| `rm=` | Số field quảng cáo đã xoá. `0` = response này không có quảng cáo (bình thường) |
+| `st=` | `patched` · `no_ad` · `missing_body` · `parse_fail` |
+
+Xong đổi `argument` về `ads` để tắt probe.
+
+### Cách 2 — báo cáo gộp
+
+Mở **Safari**, gõ:
+
+```
+https://www.youtube.com/xwuan-selftest
+```
+
+Rồi vào **数据 > 代理**, tìm URL có `?xwuan-report=v1;...`:
+
+| Báo cáo | Nghĩa |
+|---|---|
+| `state=never_ran` | Engine **chưa từng chạy** → sai ở MITM / CA / global routing, không phải sai ở engine |
+| `state=ran;phase=patched;rm=2` | ✅ Đã chạy và đã xoá quảng cáo |
+| `state=ran;phase=no-body` | Chạy nhưng không nhận được body → `requires-body` hoặc QUIC |
+| `state=ran;phase=parse-fail` | Nhận body nhưng không parse được → gửi mình `src=` và `in=` |
+
+Cả hai kênh **không bao giờ** gửi body, cookie, hay URL gốc ra ngoài. Probe chỉ chứa tên endpoint và các con số.
+
+### Bảng đối chiếu nhanh
+
+| Triệu chứng | Nguyên nhân | Xử lý |
+|---|---|---|
+| Không có dòng probe nào | Hook không chạy | Bật HTTPS Decrypt + tin cậy CA; kiểm 全局路由 = 配置 |
+| `st=missing_body`, `in=0` | Không đọc được body | Kiểm `requires-body=1`, `binary-body-mode=1`, UDP forwarding |
+| `st=parse_fail` | Body không phải protobuf | Gửi mình `in=` và vài byte đầu |
+| `st=no_ad` nhưng vẫn thấy quảng cáo | Quảng cáo đến từ endpoint khác | Xem log có `hook=` nào khác không; có thể là `initplayback` |
+| `st=patched` nhưng vẫn thấy quảng cáo | Field ad nằm ở vị trí khác | Gửi mình `rm=` và `hook=` để mình soi |
 
 ## Đã kiểm chứng gì
 
@@ -116,7 +191,9 @@ Xong thì đổi lại `argument=ads` để tắt log.
 | Không mất byte field lạ | Test với field 9999 giả định YouTube thêm sau | ✅ |
 | Không xoá nhầm nội dung | Test element < 200 B và ad shelf có element con | ✅ |
 | Số field đúng | Đối chiếu 2 repo MITM độc lập | ✅ 7 và 68 |
-| Cú pháp module chạy được | 17 test theo checklist đã dùng cho Spotify | ✅ |
+| Cú pháp module chạy được | 18 test theo checklist đã dùng cho Spotify | ✅ |
+| Kênh chẩn đoán hoạt động | 18 test chạy engine + selftest trong runtime giả lập | ✅ |
+| Cấu hình khớp bản tương thích Shadowrocket | Đối chiếu hmxxgit (Apache-2.0) | ✅ |
 | **Trên máy thật** | **Chưa ai chạy** | ❌ **cần bạn test** |
 
 Dòng cuối là quan trọng: mọi thứ ở trên là test Node. Chưa có ai cài module này lên iPhone và mở YouTube. Trước khi phát cho ai, hãy tự chạy với `debug=true` và đối chiếu 4 dòng log ở trên.
