@@ -31,8 +31,9 @@ Xwuan-Tweaks/
 ├── scripts/               # Chính thức: mã nguồn JS đang hoạt động được modules/ trỏ tới
 ├── assets/                # Chính thức: icon và khung ảnh VIP (frames/)
 │
-├── research/              # Nghiên cứu: spotify/ (engine + module UCS), reference_nightmarket/, scanner/
-├── archive/               # Lưu trữ: scripts/ cũ & spotify-doh-demo/ (bản demo DoH cũ)
+├── products/              # Sản phẩm: spotify/ (2 mảng: on-device + server)
+├── research/              # Nghiên cứu: reference_nightmarket/, scanner/
+├── archive/               # Lưu trữ: scripts/ cũ, spotify-doh-demo/, spotify/reference/ (module & script của người khác)
 │
 ├── public/                # Web Portal (Vercel — cài profile Xwuan_DNS.mobileconfig 1-click)
 ├── api/                   # Vercel Serverless API
@@ -50,9 +51,10 @@ Xwuan-Tweaks/
 
 1. **Nghiên cứu & thử nghiệm**: Lưu tài liệu phân tích, mẫu tham khảo hoặc công cụ quét tại `research/`.
 2. **Phát hành chính thức**: Đưa script đã test ổn định vào `scripts/`, gắn link Raw vào file cấu hình trong `modules/` và cập nhật bảng cài đặt ở trên. Chuyển bản cũ hết dùng sang `archive/`.
+   - Sản phẩm nhiều phần (như `products/spotify/`) tự quản cấu trúc bên trong: mỗi hướng triển khai một thư mục con có README riêng, dữ liệu dùng chung ở `data/`.
 3. **Đồng bộ Go Proxy**: Khi có payload mới, đồng bộ vào `proxy/handler/firebase.go` hoặc `proxy/handler/revenuecat.go`.
 4. **Kiểm thử trước khi push**:
    - Node tests: `node --test tests/*.test.js tests/*/*.test.js`
    - Go proxy tests: `go test ./tests/proxy/...`
-   - Spotify research: `node --test tests/research/spotify_ucs.test.js tests/research/spotify_module_syntax.test.js`
-     (engine protobuf + cú pháp module Shadowrocket — xem `research/spotify/notes/shadowrocket-module-syntax.md`)
+   - Spotify: `node --test tests/research/*.test.js`
+     (engine protobuf + cú pháp module — xem `products/spotify/audit/shadowrocket-module-syntax.md`)

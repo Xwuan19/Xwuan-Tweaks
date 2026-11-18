@@ -30,7 +30,7 @@
  *
  * Không có protobuf schema nào của Spotify bị chép vào file này.
  * Danh sách rule đồng bộ từ EeveeSpotifyReincarnated (GPL-3.0) bằng
- * tools/sync_ucs_rules.py - xem research/spotify/README.md.
+ * tools/sync_ucs_rules.py - xem products/spotify/README.md.
  * ============================================================================
  */
 

@@ -6,12 +6,12 @@ Nguồn: SideloadLabs/EeveeSpotifyReincarnated (GPL-3.0),
        -> `private let propertyReplacements = [...]`
 
 Sinh ra:
-  research/spotify/data/ucs-rules.json      (dữ liệu có thể diff / review)
-  và thay khối GENERATED RULES trong research/spotify/scripts/spotify_ucs.js
+  products/spotify/data/ucs-rules.json      (dữ liệu có thể diff / review)
+  và thay khối GENERATED RULES trong products/spotify/on-device/engine/spotify_ucs.js
 
 Cách dùng:
   git clone --depth 1 https://github.com/SideloadLabs/EeveeSpotifyReincarnated /tmp/eevee
-  python3 research/spotify/tools/sync_ucs_rules.py /tmp/eevee
+  python3 products/spotify/tools/sync_ucs_rules.py /tmp/eevee
 
 Tại sao cần: rule mới được upstream thêm liên tục (219 -> 260 rule trong một
 khoảng thời gian ngắn). Chép tay sẽ lệch ngay lập tức.
@@ -177,7 +177,7 @@ def main():
 
     payload = {
         "_comment": (
-            "Sinh tự động bởi research/spotify/tools/sync_ucs_rules.py - KHÔNG sửa tay."
+            "Sinh tự động bởi products/spotify/tools/sync_ucs_rules.py - KHÔNG sửa tay."
         ),
         "_source": {
             "repo": "SideloadLabs/EeveeSpotifyReincarnated",

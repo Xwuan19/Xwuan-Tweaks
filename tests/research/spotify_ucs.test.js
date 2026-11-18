@@ -1,4 +1,4 @@
-// Bộ test cho research/spotify/scripts/spotify_ucs.js
+// Bộ test cho products/spotify/on-device/engine/spotify_ucs.js
 //
 // Không mock "đại khái": mỗi test dựng payload protobuf đúng wire-format của
 // Spotify 9.x rồi chạy script trong sandbox giống Shadowrocket ($request,
@@ -12,8 +12,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const SCRIPT_PATH = path.resolve(__dirname, '../../research/spotify/scripts/spotify_ucs.js');
-const RULES_PATH = path.resolve(__dirname, '../../research/spotify/data/ucs-rules.json');
+const SCRIPT_PATH = path.resolve(__dirname, '../../products/spotify/on-device/engine/spotify_ucs.js');
+const RULES_PATH = path.resolve(__dirname, '../../products/spotify/data/ucs-rules.json');
 const CODE = fs.readFileSync(SCRIPT_PATH, 'utf8');
 const RULES_DATA = JSON.parse(fs.readFileSync(RULES_PATH, 'utf8'));
 
