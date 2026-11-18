@@ -1,4 +1,5 @@
 proxy
 Dockerfile
-fly.toml
+proxy/fly.toml
+**/*.key
 ca/*.key
