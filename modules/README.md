@@ -18,6 +18,17 @@ hướng B (không cần app) nằm ở `proxy/` + `admin/` + `nextdns/`.
 
 Link cài đặt đầy đủ: xem bảng ở [README gốc](../README.md).
 
+## YouTube
+
+**Không nằm ở đây.** Cùng lý do với Spotify — có module + engine riêng:
+
+```
+products/youtube/module/youtube-adblock.module
+products/youtube/engine/youtube_adblock.js
+```
+
+Xem [products/youtube/README.md](../products/youtube/README.md).
+
 ## Spotify
 
 **Không nằm ở đây.** Spotify là sản phẩm nhiều phần nên tách riêng:

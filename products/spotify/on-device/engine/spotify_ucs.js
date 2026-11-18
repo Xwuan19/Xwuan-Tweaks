@@ -2768,7 +2768,20 @@ true
 null,
 "forceBool",
 true
-]
+],
+// --- 2 key madprops: bổ sung tay 2026-11-18 (app2smile) ---
+[
+"com.spotify.madprops.use.ucs.product.state",
+null,
+"setBool",
+true
+],
+[
+"com.spotify.madprops.delivered.by.ucs",
+null,
+"setBool",
+true
+],
 ];
 var SERVER_AUTHORITATIVE_ATTRIBUTES = ["offline", "can-use-offline", "has-offline-state", "max-offline-downloads-per-device", "max-offline-tracks", "offline-backup", "lyrics-offline", "very-high-bitrate", "audio-quality", "social-session", "social-session-free-tier", "jam-social-session"];
 // END GENERATED RULES

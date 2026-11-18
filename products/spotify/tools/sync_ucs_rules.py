@@ -24,8 +24,8 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
-DATA_OUT = os.path.join(ROOT, "research", "spotify", "data", "ucs-rules.json")
-SCRIPT_OUT = os.path.join(ROOT, "research", "spotify", "scripts", "spotify_ucs.js")
+DATA_OUT = os.path.join(ROOT, "products", "spotify", "data", "ucs-rules.json")
+SCRIPT_OUT = os.path.join(ROOT, "products", "spotify", "on-device", "engine", "spotify_ucs.js")
 
 SWIFT_REL = "Sources/EeveeSpotify/Premium/DynamicPremium+ModifyingFunctions.swift"
 

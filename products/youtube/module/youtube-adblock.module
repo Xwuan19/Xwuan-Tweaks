@@ -1,0 +1,130 @@
+#!name=YouTube AdBlock (Shadowrocket)
+#!desc=Chặn quảng cáo YouTube ở tầng mạng: bỏ adPlacements/adSlots khỏi /player và /get_watch, bỏ ad card khỏi feed, bỏ ad reel khỏi Shorts. Không cần sideload IPA. Cần bật HTTPS Decrypt và tin cậy CA Shadowrocket.
+#!author=Xwuan
+#!category=Xwuan Products
+#!homepage=https://github.com/Xwuan19/Xwuan-Tweaks
+#
+# ============================================================================
+# ĐỌC TRƯỚC KHI DÙNG (3 điều kiện bắt buộc, thiếu 1 là module im lặng)
+# ============================================================================
+# 1. Bật HTTPS Decrypt: Config > ⓘ > HTTPS Decrypt > Certificate > Generate
+#    new CA > Install Certificate, rồi iOS Settings > General > About >
+#    Certificate Trust Settings > bật tin cậy. Không có bước này thì mọi hook
+#    [Script] không nhận được body.
+# 2. UDP phải đi qua proxy (Settings > UDP > Enable Forwarding). YouTube đi
+#    HTTP/3 trên QUIC; QUIC lọt ra ngoài thì phần lớn request không đọc được.
+#    Module chặn UDP của YouTube ở [Rule] để ép về TCP.
+# 3. iOS 15 trở lên. Từ iOS 15 giới hạn bộ nhớ Network Extension tăng từ 15 MB
+#    lên 50 MB. iOS cũ hơn có thể làm module im lặng hoặc rớt VPN.
+#
+# ============================================================================
+# GIỚI HẠN — đọc trước khi kỳ vọng
+# ============================================================================
+# Module này chỉ sửa được thứ NẰM TRONG HTTP RESPONSE. Nó KHÔNG làm được những
+# gì các tweak Logos (YTLite / YouMod / ytkace) làm, vì chúng vá thẳng ObjC
+# runtime trong app:
+#
+#   Không làm được (cần sideload IPA):
+#     - SponsorBlock (cần UI + hooks vào player)
+#     - tua/tắt quảng cáo trong player, PiP, nền tối, chặn Shorts
+#     - download, chặn cập nhật, ẩn nút, đổi giao diện
+#     - mở khoá tính năng Premium (video chất lượng cao hơn mức tài khoản)
+#
+#   Làm được (đã có code + test):
+#     - bỏ adPlacements (field 7) và adSlots (field 68) khỏi /youtubei/v1/player
+#     - bỏ field 7/68 lồng trong /youtubei/v1/get_watch
+#     - bỏ ad card / survey card khỏi /browse, /next, /search
+#     - bỏ ad reel khỏi /reel_watch_sequence
+#     - chặn endpoint telemetry và URL quảng cáo
+#
+# ============================================================================
+# GHI CHÚ KỸ THUẬT
+# ============================================================================
+# Số field protobuf đối chiếu từ hai nguồn độc lập:
+#   - blockads-android  tunnel/internal/mitm/youtube_proto.go  (GPL-3.0)
+#   - imitm             internal/modules/youtube/player_ads.go (MIT)
+# Cả hai dùng 7 = adPlacements, 68 = adSlots. Không có số nào là suy đoán.
+#
+# Engine KHÔNG dùng protobufjs. Nó đọc/ghi wire format ở mức field và giữ
+# nguyên byte của mọi field không sửa, nên field lạ YouTube thêm sau này vẫn
+# đi qua. Mọi exception hoặc cấu trúc lạ đều passthrough nguyên body gốc —
+# không bao giờ trả body rỗng (xem mục 2 của
+# products/spotify/audit/shadowrocket-module-syntax.md).
+#
+# argument: ads | off  (+ thêm "debug" để bật log chẩn đoán)
+#   ads = chặn quảng cáo (mặc định)
+#   off = tắt phần patch protobuf, chỉ giữ chặn URL
+# Ví dụ bật log trên điện thoại:  ...argument=ads&debug=true
+# Log sẽ có dạng:  [youtube-adblock] đã xoá N mục | ...
+#
+# ============================================================================
+# LƯU Ý VỀ YOUTUBE PREMIUM / GÓI CƯỚC
+# ============================================================================
+# Một số nhà mạng (Viettel/VNPT/MobiFone) bán gói "YouTube không quảng cáo" và
+# chặn bằng cách can thiệp DNS/SNI ở hạ tầng. Module này KHÔNG tương tác với
+# các gói đó: nếu nhà mạng đã chặn ở tầng của họ thì response không tới được
+# máy để sửa, và ngược lại module không mở khoá được gói cước chưa mua.
+# Đây là hai cơ chế khác nhau, không thay thế nhau.
+
+[Rule]
+# --- Ép YouTube rời QUIC/HTTP3 để MITM đọc được body qua TCP ---
+# Dùng PROTOCOL,UDP (không dùng PROTOCOL,QUIC — "QUIC" chỉ có trong Clash).
+AND,((DOMAIN-SUFFIX,googlevideo.com),(PROTOCOL,UDP)),REJECT
+AND,((DOMAIN-SUFFIX,youtube.com),(PROTOCOL,UDP)),REJECT
+AND,((DOMAIN,youtubei.googleapis.com),(PROTOCOL,UDP)),REJECT
+
+# --- Telemetry / đo lường (không ảnh hưởng chức năng) ---
+DOMAIN-SUFFIX,doubleclick.net,REJECT
+DOMAIN-SUFFIX,googleadservices.com,REJECT
+DOMAIN-SUFFIX,googlesyndication.com,REJECT
+DOMAIN,pagead2.googlesyndication.com,REJECT
+DOMAIN,googleads.g.doubleclick.net,REJECT
+DOMAIN,imasdk.googleapis.com,REJECT
+DOMAIN,s.youtube.com,REJECT
+
+[URL Rewrite]
+# Cú pháp: <regex URL> _ reject-200
+# reject-200 (không dùng "reject" trần): reject làm rớt kết nối nên app retry
+# liên tục -> nóng máy, tốn pin. reject-200 trả 200 rỗng để app thôi gọi.
+# Chi tiết: products/spotify/audit/shadowrocket-module-syntax.md mục 6.
+
+# --- Endpoint cấp phát quảng cáo ---
+^https?:\/\/[\w.-]*googlevideo\.com\/(?:initplayback|videoplayback)(?=[^#]*[?&]oad=)[^#]* _ reject-200
+^https?:\/\/[\w.-]*googlevideo\.com\/(?:dclk_video_ads|csi_204|api\/stats\/ads)[^#]* _ reject-200
+^https?:\/\/[\w.-]*youtube\.com\/api\/stats\/(?:ads|atr|playback)[^#]* _ reject-200
+^https?:\/\/[\w.-]*youtube\.com\/pagead\/[^#]* _ reject-200
+^https?:\/\/[\w.-]*youtube\.com\/get_midroll_info[^#]* _ reject-200
+^https?:\/\/[\w.-]*youtube\.com\/youtubei\/v1\/log_event[^#]* _ reject-200
+
+[MITM]
+hostname = %APPEND% youtubei.googleapis.com, *.youtube.com, youtube.com, *.googlevideo.com, googlevideo.com
+# h2 = true: YouTube đi HTTP/2. Không bật thì phần lớn request không giải mã
+# được và hook không thấy body.
+h2 = true
+
+[Script]
+# Engine tự chứa: products/youtube/engine/youtube_adblock.js
+#   /youtubei/v1/player            -> PlayerResponse (field 7, 68)
+#   /youtubei/v1/get_watch         -> player lồng ở 1 -> 2
+#   /youtubei/v1/browse|next|search-> elementRenderer ad card
+#   /reel_watch_sequence           -> ad reel trong Shorts
+#
+# Vì sao KHÔNG đặt engine=jsc: Shadowrocket mặc định dùng webview cho
+# http-response và webview bridge Uint8Array qua được; jsc thì không (phải đổi
+# sang ArrayBuffer). Script tự nhận biết qua $environment và trả đúng kiểu nên
+# chạy được cả hai, nhưng để mặc định an toàn hơn.
+#
+# max-size: dùng số dương lớn thay vì 0 vì tài liệu cộng đồng hiểu "0" theo
+# hai cách mâu thuẫn. Vượt ngưỡng thì script tự passthrough nguyên body.
+
+yt-player = type=http-response, pattern=^https:\/\/youtubei\.googleapis\.com\/youtubei\/v1\/player(\?.*)?$, script-path=https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/products/youtube/engine/youtube_adblock.js?v=20261118_1, requires-body=1, binary-body-mode=1, max-size=8388608, timeout=30, argument=ads
+
+yt-get-watch = type=http-response, pattern=^https:\/\/youtubei\.googleapis\.com\/youtubei\/v1\/get_watch(\?.*)?$, script-path=https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/products/youtube/engine/youtube_adblock.js?v=20261118_1, requires-body=1, binary-body-mode=1, max-size=8388608, timeout=30, argument=ads
+
+yt-browse = type=http-response, pattern=^https:\/\/youtubei\.googleapis\.com\/youtubei\/v1\/browse(\?.*)?$, script-path=https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/products/youtube/engine/youtube_adblock.js?v=20261118_1, requires-body=1, binary-body-mode=1, max-size=8388608, timeout=30, argument=ads
+
+yt-next = type=http-response, pattern=^https:\/\/youtubei\.googleapis\.com\/youtubei\/v1\/next(\?.*)?$, script-path=https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/products/youtube/engine/youtube_adblock.js?v=20261118_1, requires-body=1, binary-body-mode=1, max-size=8388608, timeout=30, argument=ads
+
+yt-search = type=http-response, pattern=^https:\/\/youtubei\.googleapis\.com\/youtubei\/v1\/search(\?.*)?$, script-path=https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/products/youtube/engine/youtube_adblock.js?v=20261118_1, requires-body=1, binary-body-mode=1, max-size=8388608, timeout=30, argument=ads
+
+yt-shorts = type=http-response, pattern=^https:\/\/youtubei\.googleapis\.com\/youtubei\/v1\/reel_watch_sequence(\?.*)?$, script-path=https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/products/youtube/engine/youtube_adblock.js?v=20261118_1, requires-body=1, binary-body-mode=1, max-size=8388608, timeout=30, argument=ads
