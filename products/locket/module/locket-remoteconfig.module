@@ -1,0 +1,107 @@
+#!name=Locket Feature Flags (Shadowrocket)
+#!desc=Mở cờ tính năng của Locket ở tầng Firebase Remote Config. KHÔNG đụng RevenueCat — nên không dính Trusted Entitlements (chữ ký số). Có chế độ capture để đọc key thật trước khi sửa.
+#!author=Xwuan
+#!category=Xwuan Products
+#!homepage=https://github.com/Xwuan19/Xwuan-Tweaks
+#
+# ============================================================================
+# VÌ SAO KHÔNG ĐỤNG api.revenuecat.com
+# ============================================================================
+# RevenueCat SDK từ 4.25 có Trusted Entitlements: response entitlement được
+# ký số, và SDK trả về verification == .failed nếu chữ ký không khớp. Từ iOS
+# SDK 5.15 nó được BẬT MẶC ĐỊNH (chỉ là thông tin, app tự quyết định chặn hay
+# không). Không MITM nào tạo được chữ ký đó — không có private key của
+# RevenueCat. Nên sửa RevenueCat là đánh cược: hoặc được, hoặc app từ chối và
+# bạn không biết vì sao.
+#
+# Firebase Remote Config thì không có chữ ký:
+#   POST /v1/projects/<project>/namespaces/firebase:fetch?key=<api key>
+#   -> { "entries": { "key": "value" }, "state": "UPDATE" }
+# Đây là nơi app đọc feature flag lúc khởi động. Cờ nằm ở đây thì sửa ở đây.
+#
+# ============================================================================
+# ĐỌC TRƯỚC KHI DÙNG (4 điều kiện, thiếu 1 là module im lặng)
+# ============================================================================
+# 1. Bật HTTPS Decrypt: Config > ⓘ > HTTPS Decrypt > Certificate > Generate
+#    new CA > Install Certificate, rồi iOS Settings > General > About >
+#    Certificate Trust Settings > bật tin cậy. Không có bước này thì không
+#    host nào được giải mã và hook không chạy.
+# 2. iOS 15 trở lên (từ iOS 15 giới hạn bộ nhớ Network Extension là 50 MB).
+# 3. Module chỉ chạy khi 全局路由 = 配置 (global routing = Config).
+# 4. Đi qua PROXY: nếu Firebase bị rule DIRECT thì Shadowrocket không giải mã
+#    TLS được và script không chạy. Module có [Rule] ép hai host này qua PROXY.
+#
+# ============================================================================
+# KHÔNG XEM ĐƯỢC LOG — ĐỌC KẾT QUẢ Ở ĐÂU
+# ============================================================================
+#   CÁCH 1 — một dòng trong 数据 > 代理:
+#     Sửa argument thành:  flags&probe=true
+#     Mở Locket, rồi vào 数据 > 代理, tìm dòng:
+#       firebaselogging.googleapis.com/v1/xwuan-probe?xwuan=rc&st=ok&n=42&fl=3
+#     Đọc:  st=ok       engine chạy và thấy entries
+#           n=42        số key trong Remote Config
+#           fl=3        số cờ đã lật sang true
+#           keyCount=0 / st=no_entries  -> response không có entries (xem CÁCH 3)
+#
+#   CÁCH 2 — báo cáo gộp:
+#     Mở Safari:  https://firebaseremoteconfig.googleapis.com/xwuan-selftest
+#     rồi vào 数据 > 代理, tìm URL có  ?xwuan-report=v1;state=ran;...
+#       state=never_ran -> engine chưa từng chạy (MITM/CA/route sai)
+#       state=ran       -> engine có chạy; đọc phase/keys/eg
+#     Xong nhớ đổi argument về  flags  để tắt probe.
+#
+#   CÁCH 3 — BƯỚC BẮT BUỘC ĐẦU TIÊN, chạy trước khi bật flags:
+#     Đổi argument thành:  capture
+#     Mở Locket (kill hẳn rồi mở lại), rồi đọc `eg=` ở CÁCH 1 hoặc 2.
+#     `capture` KHÔNG sửa gì — nó chỉ ghi lại tên key và giá trị thật.
+#     Đọc được tên key thật rồi mới biết cờ nào cần lật. Đoán tên key là
+#     cách chắc chắn nhất để module "không làm gì cả".
+#
+# ============================================================================
+# GIỚI HẠN — đọc trước khi kỳ vọng
+# ============================================================================
+# Module này sửa được CỜ TÍNH NĂNG, không sửa được QUYỀN.
+#   Làm được: bật một tính năng mà app đang khoá bằng flag
+#             (ví dụ cờ "cho phép X" mà bản free nhận false)
+#   KHÔNG làm được: thứ mà backend kiểm tra lại mỗi lần gọi API. Nếu máy chủ
+#             Locket tự xem tài khoản có gói Gold không, cờ chỉ đổi được giao
+#             diện — tính năng vẫn trả lỗi. Không có cách nào vượt chuyện đó ở
+#             tầng HTTP, của ai cũng vậy.
+#   KHÔNG sửa: RevenueCat (xem mục đầu), giá cả, nội dung, tài khoản.
+#
+# ============================================================================
+# GHI CHÚ KỸ THUẬT
+# ============================================================================
+# - Response là JSON phẳng. Không protobuf, không gzip (nếu có gzip, engine
+#   nhận ra magic 1f 8b và passthrough nguyên byte thay vì trả body rỗng).
+# - Không ghi đè giá trị khác false/0/no/off. Thà bỏ sót còn hơn làm hỏng
+#   cấu hình của app.
+# - So khớp cờ theo TOKEN, không theo substring: `pro` không khớp `project`.
+# - Runtime Shadowrocket thiếu TextEncoder/TextDecoder, nên engine có UTF-8
+#   tự viết. Đây là lỗi đã làm chết script của module Spotify phổ biến.
+# - Không gửi body/token/URL gốc ra ngoài. Kênh probe chỉ có số đếm + tên key.
+
+[Rule]
+# Firebase Remote Config phải đi qua PROXY thì mới giải mã được TLS.
+DOMAIN,firebaseremoteconfig.googleapis.com,PROXY
+DOMAIN,firebaseremoteconfigrealtime.googleapis.com,PROXY
+
+[MITM]
+hostname = %APPEND% firebaseremoteconfig.googleapis.com, firebaseremoteconfigrealtime.googleapis.com
+h2 = true
+
+[Script]
+# engine: products/locket/engine/locket_remoteconfig.js
+#   POST /v1/projects/<project>/namespaces/firebase:fetch  -> entries{}
+#   (realtime namespace cùng dạng, cùng xử lý)
+#
+# argument:  flags | capture | off   (+ &probe=true)
+#   flags   = lật cờ boolean đang tắt sang "true"   (mặc định)
+#   capture = KHÔNG sửa, chỉ ghi tên key + giá trị để đọc
+#   off     = tắt hoàn toàn
+locket-rc-fetch = type=http-response, pattern=^https:\/\/firebaseremoteconfig\.googleapis\.com\/v1\/projects\/[^/]+\/namespaces\/firebase:fetch(\?.*)?$, script-path=https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/products/locket/engine/locket_remoteconfig.js?v=20261118_1, requires-body=1, max-size=-1, timeout=60, argument=flags
+
+locket-rc-realtime = type=http-response, pattern=^https:\/\/firebaseremoteconfigrealtime\.googleapis\.com\/v1\/projects\/[^/]+\/namespaces\/firebase:fetch(\?.*)?$, script-path=https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/products/locket/engine/locket_remoteconfig.js?v=20261118_1, requires-body=1, max-size=-1, timeout=60, argument=flags
+
+# --- Self-test: đọc kết quả chẩn đoán (xem mục KHÔNG XEM ĐƯỢC LOG, cách 2) ---
+locket-selftest = type=http-request, pattern=^https:\/\/firebaseremoteconfig\.googleapis\.com\/xwuan-selftest, script-path=https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/products/locket/engine/locket_selftest.js?v=20261118_1, timeout=10
