@@ -1,4 +1,4 @@
-# Audit: EeveeSpotifyReincarnated 7.5.0 ↔ research/spotify
+# Audit: EeveeSpotifyReincarnated 7.5.0 ↔ products/spotify
 
 **Ngày:** 2026-11-18
 **Nguồn đối chiếu:** `SideloadLabs/EeveeSpotifyReincarnated`, commit `f6a3403`
@@ -6,7 +6,7 @@
 **Giấy phép upstream:** GPL-3.0.
 
 Mục đích: ghi lại *chính xác* những gì tweak làm, phần nào module Shadowrocket
-làm được, phần nào **không thể**, và các điểm mà `research/spotify` trước đây
+làm được, phần nào **không thể**, và các điểm mà `products/spotify` trước đây
 hiểu sai.
 
 ---
@@ -89,7 +89,7 @@ Hai bẫy đã gặp khi implement (test bắt được):
    `map<string,AccountAttribute>` trông giống một lớp bọc; nhận nhầm thì
    decode ra wire type 4 và mất toàn bộ attribute.
 
-Schema khớp 100% với `research/spotify/scripts/spot-proto-eevee.js`
+Schema khớp 100% với `archive/spotify/reference/scripts/spot-proto-eevee.js`
 (`spotifyJson`) — không cần sửa schema, chỉ cần sửa *cách dùng*.
 
 ---
@@ -190,7 +190,7 @@ upsell theo scope `ios-*`, lyrics share). `scripts/spotify_ucs.js` nhúng bản
 | `tools/sync_ucs_rules.py` | **Mới** - đồng bộ 260 rule + 12 attribute server-authoritative từ upstream |
 | `data/ucs-rules.json` | **Mới** - snapshot có thể diff khi upstream đổi |
 | `modules/spotify-premium-ucs.module` | **Mới** - module Shadowrocket đầy đủ marker |
-| `tests/research/spotify_ucs.test.js` | **Mới** - 11 test, dựng payload protobuf thật |
+| `tests/research/spotify_ucs.test.js` | **Mới** - 14 test, dựng payload protobuf thật |
 | `scripts/spot-proto-eevee.js` | Giữ nguyên (tham chiếu lịch sử). **Không dùng cho bản mới** vì các lỗi ở §4. |
 | `scripts/eevee_spotify.js` | Giữ nguyên (khung demo). |
 
@@ -200,5 +200,5 @@ upsell theo scope `ios-*`, lyrics share). `scripts/spotify_ucs.js` nhúng bản
 
 Rule table là *dữ liệu cấu hình* trích từ upstream GPL-3.0. Repo này là public.
 Nếu muốn tránh ràng buộc GPL cho toàn repo, hoặc (a) chấp nhận GPL cho phần
-`research/spotify`, hoặc (b) thay `data/ucs-rules.json` bằng danh sách tự dựng
+`products/spotify`, hoặc (b) thay `data/ucs-rules.json` bằng danh sách tự dựng
 từ quan sát traffic. Không có mã nguồn Swift/protobuf nào được copy vào repo.

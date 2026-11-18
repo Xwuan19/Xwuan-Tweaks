@@ -5,7 +5,7 @@
 // điện thoại. File này khẳng định module chỉ dùng những dạng đã đối chiếu với
 // module Shadowrocket đang chạy thật.
 //
-// Nguồn chuẩn: research/spotify/notes/shadowrocket-module-syntax.md
+// Nguồn chuẩn: products/spotify/audit/shadowrocket-module-syntax.md
 //
 // Chạy: node --test tests/research/spotify_module_syntax.test.js
 
@@ -14,7 +14,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const MODULE_PATH = path.resolve(__dirname, '../../research/spotify/modules/spotify-premium-ucs.module');
+const MODULE_PATH = path.resolve(__dirname, '../../products/spotify/on-device/module/spotify-premium-ucs.module');
 const RAW = fs.readFileSync(MODULE_PATH, 'utf8');
 const LINES = RAW.split('\n');
 

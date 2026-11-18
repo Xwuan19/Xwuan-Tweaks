@@ -1,5 +1,5 @@
 {
- "_comment": "Sinh tự động bởi research/spotify/tools/sync_ucs_rules.py - KHÔNG sửa tay.",
+ "_comment": "Sinh tự động bởi products/spotify/tools/sync_ucs_rules.py - KHÔNG sửa tay.",
  "_source": {
   "repo": "SideloadLabs/EeveeSpotifyReincarnated",
   "file": "Sources/EeveeSpotify/Premium/DynamicPremium+ModifyingFunctions.swift",
