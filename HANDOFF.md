@@ -69,11 +69,16 @@ và `admin/lib/nextdns.js` (giữ `DOMAINS_TO_REWRITE`).
 ### YouTube — hướng A (module) ✅ có code + test, chưa test trên máy thật
 - `products/youtube/module/youtube-adblock.module` — module Shadowrocket
 - `products/youtube/engine/youtube_adblock.js` — engine protobuf tự chứa (0 dependency)
-- Test: `tests/products/youtube_*.test.js` (31 test)
+- Test: `tests/products/youtube_*.test.js` (50 test)
 - Chặn: adPlacements (field **7**) + adSlots (field **68**) ở `/player`, `/get_watch`;
   ad card ở `/browse|next|search`; ad reel ở `/reel_watch_sequence`
 - Số field đối chiếu 2 nguồn MITM độc lập (blockads-android GPL-3.0, imitm MIT)
 - **Không làm được** những gì tweak Logos làm (SponsorBlock, PiP, download) — xem README
+- **Shadowrocket không có log script** → engine ghi `$persistentStore` + probe qua `$httpClient`.
+  Đọc kết quả bằng `argument=ads&probe=true` (xem `数据 > 代理`) hoặc mở
+  `https://www.youtube.com/xwuan-selftest`. KHÔNG dựa vào `console.log` hay `$notification.post`.
+- Cấu hình đã đổi theo bản tương thích hmxxgit (Apache-2.0): `engine=jsc` + `bodyBytes` +
+  `{bodyBytes: ArrayBuffer}`, `max-size=-1`, thêm luật `&oad` + `ctier` 302 + `api/stats/ads`.
 
 ### Spotify — hướng B (server) 🚧 mới có tài liệu
 - `products/spotify/server/README.md` — yêu cầu hạ tầng, kiến trúc, rủi ro
@@ -84,7 +89,7 @@ và `admin/lib/nextdns.js` (giữ `DOMAINS_TO_REWRITE`).
 ## Lệnh kiểm thử
 
 ```bash
-node --test $(find tests -name '*.test.js')   # 64 test — phải xanh hết
+node --test $(find tests -name '*.test.js')   # 83 test — phải xanh hết
 go test ./tests/proxy/...                        # cần Go toolchain (sandbox hiện không có)
 ```
 
