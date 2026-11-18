@@ -1,6 +1,6 @@
 # Xwuan-Tweaks
 
-Tổng hợp module, script và hạ tầng mở khóa tính năng (hiện tại: **Locket Gold VIP** — quay video 60s có tiếng, Photobooth 4-cut, AI Likeness Filters, Khung Widget & Caption VIP, chặn quảng cáo) phát triển bởi **Xwuan** ([@Xwuan19](https://github.com/Xwuan19)).
+Tổng hợp module, script và hạ tầng mở khóa tính năng (hiện tại: **Locket Gold VIP** — quay video 60s có tiếng, Photobooth 4-cut, AI Likeness Filters, Khung Widget & Caption VIP, chặn quảng cáo; **Spotify Premium**; **YouTube AdBlock**) phát triển bởi **Xwuan** ([@Xwuan19](https://github.com/Xwuan19)).
 
 ---
 
@@ -16,6 +16,7 @@ Sao chép trực tiếp link **Raw** tương ứng với ứng dụng bạn đan
 | **Locket VIP (RemoteConfig)** | Quantumult X | `https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/modules/Locket_RemoteConfig.snippet` |
 | **Locket VIP (RemoteConfig)** | Stash | `https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/modules/Locket_RemoteConfig.stoverride` |
 | **Spotify Premium** | Shadowrocket | `https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/products/spotify/on-device/module/spotify-premium-ucs.module` |
+| **YouTube AdBlock** | Shadowrocket | `https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/products/youtube/module/youtube-adblock.module` |
 
 > Hướng DNS (cài 1 profile, không cần app) tạm dừng cùng đợt gỡ web — cần có server
 > chạy DoH + MITM trước. Xem `products/spotify/server/README.md` và `HANDOFF.md`.
@@ -42,7 +43,7 @@ Xwuan-Tweaks/
 ├── ca/                    # Root CA: cert trong git, key KHÔNG bao giờ vào git
 ├── nextdns/               # NextDNS API client + DOMAINS_TO_REWRITE
 │
-├── products/              # Sản phẩm nhiều phần (spotify/: on-device + server)
+├── products/              # Sản phẩm nhiều phần (spotify/: on-device + server · youtube/: module + engine)
 ├── research/              # Nguyên liệu, thử nghiệm (reference_nightmarket/, scanner/)
 ├── archive/               # Bản cũ & tham chiếu người khác — KHÔNG dùng để phát hành
 ├── tests/                 # Bộ kiểm thử (Node & Go)

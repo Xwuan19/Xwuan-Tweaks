@@ -16,7 +16,7 @@ Mở khoá tính năng app bằng can thiệp tầng mạng, cho iOS, theo **hai
 | **A — Module** (per-user) | App proxy (Shadowrocket / Surge / Loon / QX / Stash) | `modules/` + `scripts/` |
 | **B — DNS + MITM server** (không cần app) | Cài 1 profile `.mobileconfig` | `proxy/` + `admin/` + `nextdns/` + `ca/` |
 
-App đang hỗ trợ: **Locket** (chính) và **Spotify** (đang phát triển).
+App đang hỗ trợ: **Locket** (chính), **Spotify** và **YouTube** (module chặn quảng cáo).
 
 ---
 
@@ -66,6 +66,15 @@ và `admin/lib/nextdns.js` (giữ `DOMAINS_TO_REWRITE`).
 - `products/spotify/on-device/` — module + engine patch protobuf
 - Test: `tests/research/spotify_*.test.js` (21 test)
 
+### YouTube — hướng A (module) ✅ có code + test, chưa test trên máy thật
+- `products/youtube/module/youtube-adblock.module` — module Shadowrocket
+- `products/youtube/engine/youtube_adblock.js` — engine protobuf tự chứa (0 dependency)
+- Test: `tests/products/youtube_*.test.js` (31 test)
+- Chặn: adPlacements (field **7**) + adSlots (field **68**) ở `/player`, `/get_watch`;
+  ad card ở `/browse|next|search`; ad reel ở `/reel_watch_sequence`
+- Số field đối chiếu 2 nguồn MITM độc lập (blockads-android GPL-3.0, imitm MIT)
+- **Không làm được** những gì tweak Logos làm (SponsorBlock, PiP, download) — xem README
+
 ### Spotify — hướng B (server) 🚧 mới có tài liệu
 - `products/spotify/server/README.md` — yêu cầu hạ tầng, kiến trúc, rủi ro
 - **Chưa có code.** Đang chờ chốt: nhà cung cấp VPS, domain, OS, có gộp chung Locket không.
@@ -75,7 +84,7 @@ và `admin/lib/nextdns.js` (giữ `DOMAINS_TO_REWRITE`).
 ## Lệnh kiểm thử
 
 ```bash
-node --test tests/*.test.js tests/*/*.test.js   # 35 test — phải xanh hết
+node --test $(find tests -name '*.test.js')   # 64 test — phải xanh hết
 go test ./tests/proxy/...                        # cần Go toolchain (sandbox hiện không có)
 ```
 
@@ -121,3 +130,11 @@ Kỳ vọng: `tests 35 / pass 35 / fail 0`.
    trúc repo thì các URL đó vẫn phải giữ đúng đường dẫn `assets/...`.
 4. **Chưa test Go proxy** trong môi trường này (không có `go`). Cần chạy `go test ./tests/proxy/...`
    ở máy có Go trước khi tin vào phần proxy.
+5. **Test module YouTube trên iPhone thật.** Mọi thứ hiện là test Node. Trước khi phát cho
+   ai: cài module, đặt `argument=ads&debug=true`, mở YouTube, đối chiếu 4 dòng log ở
+   `products/youtube/README.md`. Nếu `/youtubei/v1/log_event` chặn nhầm (mất lịch sử xem)
+   thì bỏ dòng `reject-200` tương ứng trước tiên.
+6. **2 key madprops Spotify** (`com.spotify.madprops.use.ucs.product.state`,
+   `com.spotify.madprops.delivered.by.ucs`) được bổ sung tay, **không có trong upstream
+   EeveeSpotify**. Chạy lại `tools/sync_ucs_rules.py` sẽ làm mất — test
+   `tests/research/spotify_ucs.test.js` sẽ fail để nhắc. Khi đó thêm lại và tăng `counts`.

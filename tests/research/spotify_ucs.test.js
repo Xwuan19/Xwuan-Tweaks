@@ -170,8 +170,11 @@ const REMOTE_CONFIG_URL = 'https://spclient.wg.spotify.com/remote-config-resolve
 /* ================================ TESTS ================================== */
 
 test('schema đồng bộ đúng số lượng và nội dung từ EeveeSpotifyReincarnated', () => {
-  assert.strictEqual(RULES_DATA.rules.length, 260);
-  assert.strictEqual(RULES_DATA.counts.setBool, 190);
+  // 260 rule sinh từ upstream + 2 key madprops bổ sung tay (app2smile).
+  // Hai key này KHÔNG có trong EeveeSpotify nên chạy sync_ucs_rules.py lần
+  // nữa sẽ làm mất — test dưới khẳng định chúng vẫn còn để phát hiện sớm.
+  assert.strictEqual(RULES_DATA.rules.length, 262);
+  assert.strictEqual(RULES_DATA.counts.setBool, 192);
   assert.strictEqual(RULES_DATA.counts.forceBool, 41);
   assert.strictEqual(RULES_DATA.counts.remove, 28);
   assert.strictEqual(RULES_DATA.counts.setEnum, 1);
@@ -181,6 +184,35 @@ test('schema đồng bộ đúng số lượng và nội dung từ EeveeSpotifyR
   assert.ok(CODE.includes('var UCS_RULES = '));
   assert.ok(CODE.includes('"enable_common_capping"'));
   assert.ok(CODE.includes('"premium_gated_start_jam_buttons_enabled"'));
+});
+
+test('2 key madprops bổ sung tay vẫn còn (sync upstream sẽ làm mất)', () => {
+  const MADD = [
+    'com.spotify.madprops.use.ucs.product.state',
+    'com.spotify.madprops.delivered.by.ucs'
+  ];
+  const names = new Set(RULES_DATA.rules.map((r) => r.name));
+  MADD.forEach((k) => {
+    assert.ok(names.has(k), `thiếu rule "${k}" trong ucs-rules.json`);
+    assert.ok(CODE.includes(`"${k}"`), `thiếu rule "${k}" trong engine spotify_ucs.js`);
+  });
+  MADD.forEach((k) => {
+    const rule = RULES_DATA.rules.find((r) => r.name === k);
+    assert.strictEqual(rule.action, 'setBool', `${k} phải là setBool`);
+    assert.strictEqual(rule.value, true, `${k} phải = true`);
+    assert.strictEqual(rule.scope, null, `${k} phải không có scope`);
+  });
+});
+
+test('tool sync trỏ đúng đường dẫn products/ (đã chuyển từ research/)', () => {
+  const tool = fs.readFileSync(
+    path.resolve(__dirname, '../../products/spotify/tools/sync_ucs_rules.py'), 'utf8');
+  assert.ok(tool.includes('"products", "spotify", "data", "ucs-rules.json"'),
+    'DATA_OUT phải trỏ products/spotify/data/');
+  assert.ok(tool.includes('"products", "spotify", "on-device", "engine", "spotify_ucs.js"'),
+    'SCRIPT_OUT phải trỏ products/spotify/on-device/engine/');
+  assert.ok(!tool.includes('"research", "spotify"'),
+    'không được còn đường dẫn research/spotify — thư mục đó đã bị xoá');
 });
 
 test('bootstrap: gỡ quảng cáo, đặt attribute Premium, bỏ rule capping', () => {

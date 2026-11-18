@@ -21,6 +21,7 @@ nhúng dạng dữ liệu, không phải logic phức tạp.
 
 - `archive/scripts/locket_photobooth.js` — bản cũ, không còn module nào trỏ tới.
 - `products/spotify/on-device/engine/` — engine Spotify, tách riêng theo sản phẩm.
+- `products/youtube/engine/` — engine chặn quảng cáo YouTube, tách riêng theo sản phẩm.
 
 ## Quy ước
 
