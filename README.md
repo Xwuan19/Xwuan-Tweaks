@@ -31,7 +31,7 @@ Xwuan-Tweaks/
 ├── scripts/               # Chính thức: mã nguồn JS đang hoạt động được modules/ trỏ tới
 ├── assets/                # Chính thức: icon và khung ảnh VIP (frames/)
 │
-├── research/              # Nghiên cứu: spotify/, reference_nightmarket/ & công cụ quét endpoint (scanner/)
+├── research/              # Nghiên cứu: spotify/ (engine + module UCS), reference_nightmarket/, scanner/
 ├── archive/               # Lưu trữ: scripts/ cũ & spotify-doh-demo/ (bản demo DoH cũ)
 │
 ├── public/                # Web Portal (Vercel — cài profile Xwuan_DNS.mobileconfig 1-click)
@@ -54,3 +54,5 @@ Xwuan-Tweaks/
 4. **Kiểm thử trước khi push**:
    - Node tests: `node --test tests/*.test.js tests/*/*.test.js`
    - Go proxy tests: `go test ./tests/proxy/...`
+   - Spotify research: `node --test tests/research/spotify_ucs.test.js tests/research/spotify_module_syntax.test.js`
+     (engine protobuf + cú pháp module Shadowrocket — xem `research/spotify/notes/shadowrocket-module-syntax.md`)
