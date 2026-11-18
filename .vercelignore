@@ -1,5 +1,0 @@
-proxy
-Dockerfile
-proxy/fly.toml
-**/*.key
-ca/*.key

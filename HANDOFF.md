@@ -14,11 +14,38 @@ Mở khoá tính năng app bằng can thiệp tầng mạng, cho iOS, theo **hai
 | Hướng | Cần gì | Nằm ở |
 |---|---|---|
 | **A — Module** (per-user) | App proxy (Shadowrocket / Surge / Loon / QX / Stash) | `modules/` + `scripts/` |
-| **B — DNS + MITM server** (không cần app) | Cài 1 profile `.mobileconfig` | `proxy/` + `admin/` + `api/` + `public/` |
+| **B — DNS + MITM server** (không cần app) | Cài 1 profile `.mobileconfig` | `proxy/` + `admin/` + `nextdns/` + `ca/` |
 
 App đang hỗ trợ: **Locket** (chính) và **Spotify** (đang phát triển).
 
 ---
+
+## Đã gỡ web (2026-11-18)
+
+Theo yêu cầu: tạm dừng web, tập trung DNS + module. Đã xoá **12 thư mục/file web**:
+
+| Xoá | Trước đây là gì | Khôi phục |
+|---|---|---|
+| `public/` | Site landing (124 file, 5.3 MB) + profile đã ký | `git checkout fcb2d39 -- public` |
+| `api/` | 6 Vercel route (generate-profile, create-account, check-usage, admin/*) | `git checkout fcb2d39 -- api` |
+| `admin/public/` | Bản mirror 1:1 của `public/` (5.3 MB) | `git checkout fcb2d39 -- admin/public` |
+| `admin/api/generate-profile.js` | Handler của route profile | `git checkout fcb2d39 -- admin/api` |
+| `admin/lib/auth.js` | JWT admin, so mật khẩu | `git checkout fcb2d39 -- admin/lib/auth.js` |
+| `admin/lib/db.js` | Supabase client | `git checkout fcb2d39 -- admin/lib/db.js` |
+| `supabase/` | Schema + migration | `git checkout fcb2d39 -- supabase` |
+| `vercel.json`, `.vercelignore` | Cấu hình deploy | `git checkout fcb2d39 -- vercel.json .vercelignore` |
+| `tests/admin/{index_html,auth,db}.test.js` | Test của phần web | `git checkout fcb2d39 -- tests/admin` |
+
+**Giữ lại vì thuộc DNS, không phải web:** `admin/lib/mobileconfig.js` (sinh profile DoH)
+và `admin/lib/nextdns.js` (giữ `DOMAINS_TO_REWRITE`).
+
+**Hệ quả cần biết:**
+- `getSignedProfile()` giờ trả `null` — file `.mobileconfig` đã ký không còn trong repo.
+  `generateMobileconfig()` vẫn sinh được XML chưa ký (iOS cài được nhưng hiện cảnh báo
+  "chưa xác minh"). Muốn bản đã ký phải ký bằng `openssl smime -sign` — **chưa script hoá**.
+- Luồng `create-account` / `check-usage` (NextDNS API + Supabase) không còn route gọi tới.
+  `nextdns/index.js` vẫn còn và được test phủ, nhưng hiện chỉ là thư viện.
+- Test: 35 → **31** (bỏ 4 test của `index_html`, `auth`, `db`, và handler profile).
 
 ## Hiện trạng từng mảng
 
@@ -28,12 +55,12 @@ App đang hỗ trợ: **Locket** (chính) và **Spotify** (đang phát triển).
 - `scripts/locket_*.js` (6 file) — đều có module trỏ tới, không có file mồ côi
 - Test: `tests/scripts/firebase_filters.test.js`
 
-### Locket — hướng B (DNS + MITM) ✅ chạy được
-- `public/Xwuan_DNS.mobileconfig` — profile đã ký, gồm DNS DoH + Root CA
-- `proxy/` — Go MITM proxy (Fly.io), forging cert theo SNI, sửa `expires_date` RevenueCat + Firebase Remote Config + `api.locketcamera.com`
-- `admin/` — thư viện backend: sinh profile, NextDNS API, Supabase
-- `api/` — Vercel serverless: `generate-profile`, `create-account`, `check-usage`, `admin/*`
-- Vanity index tại `public/index.html` và `admin/public/index.html` (giữ 1:1)
+### Locket — hướng B (DNS + MITM) ⚠️ code còn, phần phát hành đã gỡ
+- `proxy/` — Go MITM proxy (Fly.io): forging cert theo SNI, sửa `expires_date` RevenueCat
+  + Firebase Remote Config + `api.locketcamera.com`. **Còn nguyên.**
+- `admin/lib/mobileconfig.js` — sinh profile DoH. **Còn nguyên** (công cụ chính).
+- `nextdns/index.js` — client NextDNS + `DOMAINS_TO_REWRITE`. **Còn nguyên.**
+- Profile đã ký phát hành cho user, web, và API: **đã gỡ** cùng đợt dọn web.
 
 ### Spotify — hướng A (module) ✅ chạy được, chưa test trên máy thật
 - `products/spotify/on-device/` — module + engine patch protobuf
@@ -61,9 +88,8 @@ Kỳ vọng: `tests 35 / pass 35 / fail 0`.
 1. **Miễn phí 100%.** Không thẻ giá, không gói trả phí, không CTA mua.
 2. **Locket ưu tiên profile tĩnh đã ký** (`public/Xwuan_DNS.mobileconfig`) thay vì sinh
    động qua NextDNS API — để tránh rủi ro đăng ký thất bại.
-3. **`public/` và `admin/public/` phải giữ giống nhau 1:1.** Sửa một bên thì copy sang bên kia.
-   (Lý do lịch sử: hai deployment Vercel cùng phục vụ một UI. Nếu xác nhận chỉ còn một
-   deployment, gộp lại — xem "Việc cần làm".)
+3. ~~`public/` và `admin/public/` phải giữ giống nhau 1:1.~~ **Không còn áp dụng** — cả hai
+   đã bị gỡ khi tạm dừng web.
 4. **Spotify tách riêng trong `products/spotify/`,** không nhét vào `modules/` ở root.
    Lý do: nó là sản phẩm nhiều phần (on-device + server), không phải một file module.
 5. **Bản tham chiếu của người khác để trong `archive/`,** không để cạnh bản đang dùng.
@@ -87,9 +113,8 @@ Kỳ vọng: `tests 35 / pass 35 / fail 0`.
 
 ## Việc cần làm
 
-1. **Chốt `admin/` có phải deployment Vercel thứ hai không.** Nếu không → xoá
-   `admin/public/` (5.3 MB trùng lặp) và trỏ `admin/lib/mobileconfig.js` chỉ về
-   `public/Xwuan_DNS.mobileconfig`. Nếu có → giữ nguyên và ghi rõ trong README.
+1. ~~Chốt `admin/` có phải deployment Vercel thứ hai không.~~ **Đã giải quyết** — toàn bộ
+   `admin/public/` và cấu hình Vercel đã gỡ cùng đợt dọn web.
 2. **Spotify hướng B:** chốt 4 mục trong `products/spotify/server/README.md` rồi viết code.
 3. **`assets/`** hiện chỉ được tham chiếu qua URL tuyệt đối (`raw.githubusercontent.com`,
    `cdn.jsdelivr.net`) chứ không có code nào đọc bằng đường dẫn tương đối. Nếu đổi cấu

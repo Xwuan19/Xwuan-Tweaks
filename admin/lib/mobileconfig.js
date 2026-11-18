@@ -65,11 +65,14 @@ function getCACertBase64() {
 }
 
 function getSignedProfile() {
+  // public/ (web) đã bị gỡ nên không còn file .mobileconfig tĩnh trong repo.
+  // Hàm trả null -> generateMobileconfig() rơi về nhánh sinh XML.
+  // Giữ fallback để ai tự đặt file vào một trong các vị trí này thì vẫn đọc được.
   const candidates = [
+    path.resolve(__dirname, '../../profiles/Xwuan_DNS.mobileconfig'),
     path.resolve(__dirname, '../../public/Xwuan_DNS.mobileconfig'),
-    path.resolve(__dirname, '../public/Xwuan_DNS.mobileconfig'),
-    path.resolve(process.cwd(), 'public/Xwuan_DNS.mobileconfig'),
-    path.resolve(process.cwd(), 'admin/public/Xwuan_DNS.mobileconfig')
+    path.resolve(process.cwd(), 'profiles/Xwuan_DNS.mobileconfig'),
+    path.resolve(process.cwd(), 'public/Xwuan_DNS.mobileconfig')
   ];
   for (const candidate of candidates) {
     try {

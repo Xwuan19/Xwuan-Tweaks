@@ -17,6 +17,9 @@ Sao chép trực tiếp link **Raw** tương ứng với ứng dụng bạn đan
 | **Locket VIP (RemoteConfig)** | Stash | `https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/modules/Locket_RemoteConfig.stoverride` |
 | **Spotify Premium** | Shadowrocket | `https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/products/spotify/on-device/module/spotify-premium-ucs.module` |
 
+> Hướng DNS (cài 1 profile, không cần app) tạm dừng cùng đợt gỡ web — cần có server
+> chạy DoH + MITM trước. Xem `products/spotify/server/README.md` và `HANDOFF.md`.
+
 > [!IMPORTANT]
 > **2 bước bắt buộc để kích hoạt Locket VIP thành công:**
 > 1. Bật **Giải mã HTTPS (HTTPS Decryption / MitM)** và tin cậy chứng chỉ gốc trong `Cài đặt > Cài đặt chung > Giới thiệu > Cài đặt tin cậy chứng nhận`.
@@ -31,25 +34,26 @@ Xwuan-Tweaks/
 │  ── HƯỚNG A: module chạy trên máy user (cần app proxy) ──
 ├── modules/               # File cấu hình cài thẳng (.module, .sgmodule, .plugin, .snippet, .stoverride)
 ├── scripts/               # JS chạy trong app proxy, được modules/ trỏ tới qua raw URL
-├── assets/                # Ảnh dùng trong response (trỏ qua URL tuyệt đối, không đọc bằng path)
+├── assets/                # Ảnh dùng trong response (trỏ qua URL tuyệt đối)
 │
 │  ── HƯỚNG B: DNS + MITM server (không cần cài app) ──
-├── proxy/                 # Go TLS MITM proxy (Fly.io): ký cert theo SNI, sửa response
-├── public/                # Site tĩnh + profile phát hành Xwuan_DNS.mobileconfig
-├── api/                   # Vercel serverless routes (mỏng, re-export từ admin/)
-├── admin/                 # Logic backend thật (auth, db, nextdns, mobileconfig)
+├── proxy/                 # Go TLS MITM proxy: ký cert theo SNI, sửa response
+├── admin/                 # Thư viện DNS: sinh profile DoH + danh sách domain rewrite
 ├── ca/                    # Root CA: cert trong git, key KHÔNG bao giờ vào git
-├── nextdns/               # NextDNS API client + danh sách domain rewrite
-├── supabase/              # Schema & migration database
+├── nextdns/               # NextDNS API client + DOMAINS_TO_REWRITE
 │
 ├── products/              # Sản phẩm nhiều phần (spotify/: on-device + server)
 ├── research/              # Nguyên liệu, thử nghiệm (reference_nightmarket/, scanner/)
-├── archive/               # Bản cũ & tham chiếu của người khác — KHÔNG dùng để phát hành
+├── archive/               # Bản cũ & tham chiếu người khác — KHÔNG dùng để phát hành
 ├── tests/                 # Bộ kiểm thử (Node & Go)
 │
-├── HANDOFF.md             # Trạng thái repo, quyết định đã chốt, việc cần làm
-└── vercel.json            # Cấu hình Vercel duy nhất (ở root)
+└── HANDOFF.md             # Trạng thái repo, quyết định đã chốt, việc cần làm
 ```
+
+> **Web đã tạm gỡ** (`public/`, `api/`, `supabase/`, `vercel.json`). Trọng tâm hiện tại là
+> DNS + module. Xem `HANDOFF.md` mục "Đã gỡ web" để biết cách khôi phục từ git history.
+>
+> Mỗi thư mục đều có `README.md` riêng. Bắt đầu từ [`HANDOFF.md`](HANDOFF.md).
 
 > Mỗi thư mục đều có `README.md` riêng giải thích nội dung và ai trỏ tới nó.
 > Bắt đầu từ [`HANDOFF.md`](HANDOFF.md) để biết hiện trạng.

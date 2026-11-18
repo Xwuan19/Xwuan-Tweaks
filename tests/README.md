@@ -1,7 +1,7 @@
 # `tests/` — bộ kiểm thử
 
 ```bash
-node --test tests/*.test.js tests/*/*.test.js   # 35 test
+node --test tests/*.test.js tests/*/*.test.js   # 31 test
 go test ./tests/proxy/...                        # cần Go
 ```
 
@@ -9,7 +9,7 @@ go test ./tests/proxy/...                        # cần Go
 
 | Thư mục | Phủ gì | Số test |
 |---|---|---|
-| `admin/` | auth, db, nextdns, mobileconfig, `public/index.html`, camera_filter_config | 13 |
+| `admin/` | nextdns, mobileconfig (sinh profile DoH), camera_filter_config | 7 |
 | `research/` | engine protobuf Spotify + cú pháp module Shadowrocket | 21 |
 | `scripts/` | filter trong `locket_firebase_response.js` | 1 |
 | `proxy/` | Go handler (chưa từng chạy trong môi trường này — không có Go) | ? |
@@ -27,6 +27,8 @@ go test ./tests/proxy/...                        # cần Go
 
 - **`tests/proxy/` chưa từng chạy** ở đây vì sandbox không có Go toolchain. Đừng coi
   "test xanh" là bằng chứng proxy đúng.
+- Phần web (auth, Supabase, landing page) **đã gỡ cùng đợt dọn web** — test tương ứng
+  cũng đã xoá. Khôi phục bằng `git checkout fcb2d39 -- tests/admin`.
 - **5/6 script trong `scripts/` không có test** (chỉ `locket_firebase_response.js` được phủ).
 - Chưa có test end-to-end nào chạy trên thiết bị thật. Mọi xác nhận "chạy được trên máy
   thật" phải do người dùng test và gửi log lại.
