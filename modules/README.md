@@ -1,7 +1,7 @@
 # `modules/` — module chính thức cho app proxy
 
 File cấu hình cài thẳng vào app proxy trên máy user. Đây là **hướng A** (per-user);
-hướng B (không cần app) nằm ở `proxy/` + `public/`.
+hướng B (không cần app) nằm ở `proxy/` + `admin/` + `nextdns/`.
 
 ## Locket
 

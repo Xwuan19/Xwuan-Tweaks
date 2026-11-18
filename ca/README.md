@@ -1,6 +1,6 @@
 # `ca/` — Root CA của hướng B
 
-CA dùng để ký cert giả cho các domain bị MITM. Profile `public/Xwuan_DNS.mobileconfig`
+CA dùng để ký cert giả cho các domain bị MITM. Profile DNS do `admin/lib/mobileconfig.js` sinh ra
 nhúng **cert** của CA này; thiết bị tin nó thì proxy mới đọc được traffic.
 
 | File | Vào git? | Vai trò |
@@ -15,7 +15,7 @@ Ai có `root-ca.key` thì **ký được cert cho bất kỳ domain nào** và m
 này sẽ chấp nhận. Nếu key lộ:
 
 1. Sinh CA mới bằng `./ca/gen-ca.sh`
-2. Ký lại profile (`public/Xwuan_DNS.mobileconfig`)
+2. Sinh lại + ký lại profile (dùng `admin/lib/mobileconfig.js`, rồi ký bằng `openssl smime -sign`)
 3. **Mọi user phải cài lại profile** — không có cách thu hồi từ xa
 4. Rotate secret trên Fly: `fly secrets set ROOT_CA_KEY=...`
 

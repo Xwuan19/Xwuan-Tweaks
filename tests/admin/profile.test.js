@@ -7,7 +7,6 @@ const {
   UPLOCKET_DOH_URL,
   SUPPLEMENTAL_MATCH_DOMAINS
 } = require('../../admin/lib/mobileconfig');
-const generateProfileApi = require('../../admin/api/generate-profile');
 
 test('getCACertBase64 extracts valid base64 certificate', () => {
   const b64 = getCACertBase64();
@@ -34,37 +33,14 @@ test('generateMobileconfig default uses Xwuan_DNS and UpLocket DoH server with S
   }
 });
 
-test('getSignedProfile loads valid signed mobileconfig', () => {
+test('getSignedProfile trả null khi không có profile tĩnh (sau khi dọn web)', () => {
+  // public/ đã bị xoá cùng đợt dọn web, nên không còn file .mobileconfig đã ký trong repo.
+  // Hàm vẫn phải trả null gọn gàng thay vì throw — để generateMobileconfig() rơi về
+  // nhánh sinh XML, đó là đường dùng chính hiện nay.
   const signed = getSignedProfile();
-  assert.ok(signed, 'Signed profile should be found');
-  assert.ok(Buffer.isBuffer(signed), 'Signed profile must be a Buffer');
-  assert.ok(signed.length > 5000, 'Signed profile should be > 5KB');
-});
+  assert.strictEqual(signed, null, 'không có file thì phải trả null, không được throw');
 
-test('generateProfileApi serves signed profile with Aspen headers', () => {
-  const headers = {};
-  let statusCode = null;
-  let sentData = null;
-
-  const req = { query: {}, body: {} };
-  const res = {
-    setHeader(key, val) {
-      headers[key] = val;
-    },
-    status(code) {
-      statusCode = code;
-      return this;
-    },
-    send(data) {
-      sentData = data;
-      return this;
-    }
-  };
-
-  generateProfileApi(req, res);
-
-  assert.strictEqual(statusCode, 200);
-  assert.strictEqual(headers['Content-Type'], 'application/x-apple-aspen-config; charset=utf-8');
-  assert.strictEqual(headers['Content-Disposition'], 'attachment; filename="Xwuan_DNS.mobileconfig"');
-  assert.ok(Buffer.isBuffer(sentData), 'Should serve signed Buffer by default');
+  // Và nhánh XML vẫn phải hoạt động.
+  const xml = generateMobileconfig();
+  assert.ok(xml.includes('com.apple.dnsSettings.managed'), 'nhánh sinh XML phải dùng được');
 });

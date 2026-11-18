@@ -1,58 +1,52 @@
-# `admin/` — thư viện backend & tài nguyên web
+# `admin/` — thư viện DNS + sinh profile (phần còn lại sau khi dọn web)
 
-**Đây không phải một app độc lập** — nó là nơi chứa logic backend mà `api/` re-export,
-cộng thêm một bản sao của site tĩnh.
+> **Tên `admin/` là di sản lịch sử.** Trước đây đây là backend của web quản trị
+> (auth, Supabase, session). Toàn bộ phần web đã bị xoá — xem mục "Đã xoá" bên dưới.
+> Nay chỉ còn 2 thư viện dùng cho **hướng DNS**.
 
-> ⚠️ **Chưa rõ `admin/` có phải một Vercel project thứ hai không.** `admin/` có
-> `package.json` riêng (nguyên nhân gốc) và từng có `vercel.json` riêng — file đó **đã bị
-> xoá** vì trùng hệt bản ở root. Xem mục "Cần xác nhận".
+## Còn lại gì
 
-## Cấu trúc
-
-| Đường dẫn | Vai trò | Ai dùng |
+| File | Vai trò | Ai dùng |
 |---|---|---|
-| `lib/auth.js` | JWT admin (generate / verify), so mật khẩu | `api/admin/*.js`, tests |
-| `lib/db.js` | Supabase client: accounts, usage | `api/*.js`, tests |
-| `lib/nextdns.js` | NextDNS API: tạo/xoá/đổi tên tài khoản, đọc usage | `api/*.js`, tests |
-| `lib/mobileconfig.js` | Sinh XML profile, đọc profile đã ký, lấy CA base64 | `admin/api/generate-profile.js`, tests |
-| `api/generate-profile.js` | Handler đầy đủ cho `/api/generate-profile` | `api/generate-profile.js` re-export |
-| `public/` | **Bản sao** của `public/` ở root (~122 file, 5.3 MB) | Không có code nào trong repo đọc |
+| `lib/mobileconfig.js` | Sinh XML profile DNS (DoH payload + Root CA payload), đọc profile đã ký, lấy CA base64 | `tests/admin/profile.test.js` |
+| `lib/nextdns.js` | Re-export `../nextdns/index.js` + giữ `DOMAINS_TO_REWRITE` riêng | `tests/admin/nextdns.test.js` |
 | `package.json` | Chỉ để `npm test` trỏ về `../tests/admin/` | — |
 
-## Quan hệ với `public/` ở root
+## Đã xoá (hướng web)
 
-`admin/public/` và `public/` **giống nhau 1:1**, trừ:
+| Xoá | Lý do |
+|---|---|
+| `admin/public/` | 122 file, 5.3 MB — mirror 1:1 của `public/` (site landing). Không code nào trong repo đọc |
+| `admin/api/generate-profile.js` | Handler của Vercel route. Web tạm dừng nên không cần |
+| `admin/lib/auth.js` | JWT admin, so mật khẩu — chỉ dùng cho đăng nhập web |
+| `admin/lib/db.js` | Supabase client — chỉ dùng để lưu tài khoản NextDNS của web |
+| `admin/README.md` (bản cũ) | Mô tả cấu trúc web đã không còn |
 
-- `public/` có thêm `admin.html` (UI quản trị) và `admin/index.html` (redirect stub)
-- `admin/public/` có `.gitkeep` (đã xoá)
+Cùng đợt đó ở root cũng xoá: `public/`, `api/`, `supabase/`, `vercel.json`,
+`.vercelignore`.
 
-`admin/lib/mobileconfig.js` tìm file profile theo **4 đường dẫn fallback**, gồm cả hai vị trí:
+## Vì sao giữ `mobileconfig.js` và `nextdns.js`
+
+Chúng **không thuộc web**, chúng thuộc DNS:
+
+- `mobileconfig.js` sinh ra chính cái profile mà user cài để dùng DNS. Đây là công cụ
+  trung tâm của hướng B. Sinh lại profile sau khi đổi IP proxy / đổi DoH server đều
+  phải qua file này.
+- `nextdns.js` chứa `DOMAINS_TO_REWRITE` — danh sách 4 domain Locket được rewrite về
+  IP proxy. Đây là **cấu hình DNS**, không phải cấu hình web.
+
+## Chạy lại khi cần sinh profile
 
 ```js
-'../../public/Xwuan_DNS.mobileconfig'
-'../public/Xwuan_DNS.mobileconfig'
-'public/Xwuan_DNS.mobileconfig'
-'admin/public/Xwuan_DNS.mobileconfig'
+const { generateMobileconfig } = require('./lib/mobileconfig');
+console.log(generateMobileconfig());            // profile mặc định (Xwuan_DNS)
+console.log(generateMobileconfig('nextdns-id')); // đổi DoH sang dns.nextdns.io/<id>
 ```
 
-Nghĩa là xoá `admin/public/` **không làm hỏng** phần đọc profile.
-
-## Cần xác nhận (trước khi dọn tiếp)
-
-Câu hỏi duy nhất: **`admin/` có từng được deploy thành một Vercel project riêng không?**
-
-- **Không** → xoá `admin/public/` (giảm 5.3 MB trùng lặp), giữ nguyên `lib/` + `api/`.
-  Đây là kết quả mong muốn.
-- **Có** → giữ nguyên, và **khôi phục `admin/vercel.json`** (nội dung = bản ở root) hoặc
-  khai báo Root Directory trong dashboard Vercel.
-
-Cách kiểm tra: vào Vercel dashboard xem có project nào có Root Directory = `admin`.
-Nếu mọi project đều dùng root thì câu trả lời là "không".
-
-## Khi sửa `public/`
-
-Nếu `admin/public/` vẫn được giữ, sửa `public/index.html` thì **phải copy sang
-`admin/public/index.html`** để giữ 1:1 — đây là quy ước đã chốt trong `HANDOFF.md`.
+Profile sinh ra là **XML chưa ký**. iOS vẫn cài được nhưng sẽ hiện cảnh báo "chưa xác
+minh". Muốn có bản đã ký (như `Xwuan_DNS.mobileconfig` phát hành trước đây) thì phải ký
+bằng `openssl smime -sign` với một cert — quy trình này **chưa được script hoá**, làm tay.
+Đây là việc cần làm khi web hoạt động lại hoặc khi cần phát hành profile mới.
 
 ## Test
 
@@ -60,4 +54,4 @@ Nếu `admin/public/` vẫn được giữ, sửa `public/index.html` thì **ph�
 node --test tests/admin/*.test.js
 ```
 
-6 file test phủ: auth, db, index_html, nextdns, profile, proxy_filters.
+Còn 3 file: `nextdns`, `profile`, `proxy_filters`.
