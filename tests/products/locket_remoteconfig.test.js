@@ -321,26 +321,71 @@ test('selftest: có store -> state=ran kèm key và ví dụ', () => {
   assert.ok(u.includes('isPremium'));
 });
 
-// ─── hợp đồng của module ───────────────────────────────────────────────────
+// ─── hợp đồng của module gộp ──────────────────────────────────────────────
 
-test('module: không nhắc tới api.revenuecat.com', () => {
-  const mod = fs.readFileSync(path.resolve(__dirname, '../../products/locket/module/locket-remoteconfig.module'), 'utf8');
-  const active = mod.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n');
-  assert.ok(!active.includes('revenuecat'), 'module không được MITM RevenueCat');
+const MODULE_PATH = path.resolve(__dirname, '../../products/locket/module/locket.module');
+const MOD = fs.readFileSync(MODULE_PATH, 'utf8');
+const activeLines = (src) => src.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n');
+const declLine = (src, prefix) => src.split('\n').find((l) => l.trim().startsWith(prefix)) || '';
+
+test('module: là MỘT file duy nhất cho Shadowrocket', () => {
+  const dir = path.resolve(__dirname, '../../products/locket/module');
+  assert.deepStrictEqual(fs.readdirSync(dir), ['locket.module']);
 });
 
-test('module: mọi hook có requires-body và max-size', () => {
-  const mod = fs.readFileSync(path.resolve(__dirname, '../../products/locket/module/locket-remoteconfig.module'), 'utf8');
-  const lines = mod.split('\n').filter((l) => l.includes('type=http-response'));
-  assert.strictEqual(lines.length, 2);
+test('module: có đủ 3 hook response (RevenueCat + fetch + realtime)', () => {
+  // Chỉ đếm dòng khai báo (comment ở đầu file cũng nhắc `type=http-response`).
+  const lines = MOD.split('\n').filter((l) => l.includes('= type=http-response'));
+  assert.strictEqual(lines.length, 3);
   for (const l of lines) {
-    assert.ok(l.includes('requires-body=1'), `thiếu requires-body: ${l.slice(0, 60)}`);
-    assert.ok(l.includes('max-size=-1'), `thiếu max-size: ${l.slice(0, 60)}`);
-    assert.ok(l.includes('argument=flags'), `thiếu argument: ${l.slice(0, 60)}`);
+    assert.ok(l.includes('requires-body=1'), `thiếu requires-body: ${l.slice(0, 50)}`);
+    assert.ok(l.includes('max-size=-1'), `thiếu max-size: ${l.slice(0, 50)}`);
   }
 });
 
-test('module: có bước capture được ghi trong phần hướng dẫn', () => {
-  const mod = fs.readFileSync(path.resolve(__dirname, '../../products/locket/module/locket-remoteconfig.module'), 'utf8');
-  assert.ok(mod.includes('capture'), 'phải hướng dẫn chạy capture trước');
+test('module: RevenueCat mặc định report (không tự patch), Remote Config mặc định flags', () => {
+  assert.ok(declLine(MOD, 'locket-rc-response').includes('argument=report'));
+  assert.ok(declLine(MOD, 'locket-rc-fetch').includes('argument=flags'));
+  assert.ok(declLine(MOD, 'locket-rc-realtime').includes('argument=flags'));
+});
+
+test('module: hook request xoá cache đứng TRƯỚC hook response', () => {
+  const lines = MOD.split('\n');
+  const idx = (prefix) => lines.findIndex((l) => l.trim().startsWith(prefix));
+  assert.ok(idx('locket-rc-req ') > 0);
+  assert.ok(idx('locket-rc-response ') > idx('locket-rc-req '));
+});
+
+test('module: MITM có đủ 3 host, dùng %APPEND% và h2', () => {
+  const lines = MOD.split('\n');
+  const startIdx = lines.findIndex((l) => l.trim() === '[MITM]');
+  const scriptIdx = lines.findIndex((l) => l.trim() === '[Script]');
+  assert.ok(startIdx > 0 && scriptIdx > startIdx, 'phải có section [MITM] trước [Script]');
+  const mitm = lines.slice(startIdx, scriptIdx).join('\n');
+  for (const h of ['api.revenuecat.com', 'firebaseremoteconfig.googleapis.com',
+                   'firebaseremoteconfigrealtime.googleapis.com']) {
+    assert.ok(mitm.includes(h), `thiếu host: ${h}`);
+  }
+  assert.ok(mitm.includes('%APPEND%'));
+  assert.ok(mitm.includes('h2 = true'));
+});
+
+test('module: chỉ có 1 hook self-test, và pattern phủ cả hai host', () => {
+  const selfTests = MOD.split('\n').filter((l) => l.startsWith('locket-selftest'));
+  assert.strictEqual(selfTests.length, 1, 'chỉ được có một self-test');
+  assert.ok(selfTests[0].includes('firebaseremoteconfig'));
+  assert.ok(selfTests[0].includes('revenuecat'));
+});
+
+// Người dùng yêu cầu rõ: chỉ Shadowrocket, không port sang client khác.
+test('module: không chứa cú pháp riêng của client khác', () => {
+  const active = activeLines(MOD).toLowerCase();
+  for (const other of ['quantumult', '[general]', '[filter]', '[rewrite_local]',
+                       '[mitm] = ', 'script-update-interval', 'enabled = true']) {
+    assert.ok(!active.includes(other), `có cú pháp của client khác: ${other}`);
+  }
+});
+
+test('module: có ghi rõ chỉ dành cho Shadowrocket', () => {
+  assert.ok(MOD.toLowerCase().includes('chỉ dành cho shadowrocket'));
 });

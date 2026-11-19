@@ -1,16 +1,25 @@
-# `locket/` — Locket: hai hướng, ba module
+# `locket/` — Locket: một module Shadowrocket + tài liệu hướng DNS
 
 Mục tiêu: mở tính năng của Locket **ở tầng HTTP**, không jailbreak, không IPA
-đã sửa. Hướng "chỉ cài profile" cần IPv4 riêng — xem `dns/README.md`.
+đã sửa.
 
-## Chọn module
+- **Một module duy nhất** cho Shadowrocket: RevenueCat + Remote Config.
+- Hướng "chỉ cài profile" (DNS) chỉ có Remote Config — xem `dns/README.md`.
 
-| Module | Đụng RevenueCat | Rủi ro | Khi nào dùng |
-|---|---|---|---|
-| `module/locket-remoteconfig.module` | **không** | thấp — không giả entitlement, không có chữ ký nào bị kiểm | thử trước, và khi chỉ cần cờ |
-| `module/locket-full.module` | **có** | cao hơn — thêm entitlement vào response tài khoản thật | khi bản remote config không đủ, và đã chạy `report` |
+## Chỉ Shadowrocket
 
-Thứ tự đúng: **remote-config trước**. Nếu nó đủ thì không cần bản full.
+Module dùng riêng cú pháp Shadowrocket và **không** nhắm tới Surge / Loon /
+Quantumult X / Stash / Egern. Ba chỗ khác biệt, và cả ba là lý do không port:
+
+| # | Của Shadowrocket | Client khác |
+|---|---|---|
+| 1 | `[Script]` + `type=http-response` + `argument=` | Loon khác dạng; Surge không có `argument=` |
+| 2 | `binary-body-mode=1` + `$response.bodyBytes` → `{bodyBytes}` | Surge/Loon trả `$response.body` dạng chuỗi |
+| 3 | `$persistentStore.write(value, key)` | thứ tự tham số khác nhau giữa client |
+
+Điểm 3 từng làm chết script của module Spotify phổ biến. Một đường code, một
+client, ít chỗ sai hơn — nên engine ở đây **không** tự nhận runtime qua
+`$environment` như sản phẩm YouTube.
 
 ## RevenueCat: được ở module, không được ở DNS
 
@@ -54,39 +63,33 @@ là không".
 locket/
 ├── engine/
 │   ├── locket_remoteconfig.js   # http-response: sửa entries{} (dùng cho cả module và server)
-│   ├── locket_selftest.js       # http-request: đọc chẩn đoán remote config
-│   ├── locket_revenuecat.js     # http-response: thêm entitlement (module full)
+│   ├── locket_revenuecat.js     # http-response: report -> patch entitlement
 │   ├── locket_rc_request.js     # http-request: xoá If-None-Match để tránh 304
-│   └── locket_rc_selftest.js    # http-request: đọc tên entitlement + tình trạng chữ ký
+│   └── locket_selftest.js       # http-request: MỘT báo cáo cho cả hai phần
 ├── module/
-│   ├── locket-remoteconfig.module   # chỉ Remote Config
-│   └── locket-full.module           # Remote Config + RevenueCat entitlement
+│   └── locket.module            # module duy nhất
 ├── dns/
-│   └── README.md                # hướng profile + server, KHÔNG có RevenueCat
+│   └── README.md                # hướng profile + server, CHỈ Remote Config
 └── README.md
 ```
 
-Test: **58 test** — `locket_remoteconfig.test.js` (30) + `locket_revenuecat.test.js` (28).
+Test: **64 test** — `locket_remoteconfig.test.js` (35) + `locket_revenuecat.test.js` (29).
 
 ## Dùng
 
 ### 1. Cài module
 
-Bản an toàn (chỉ Remote Config) — **bắt đầu ở đây**:
-
 ```
-https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/products/locket/module/locket-remoteconfig.module
-```
-
-Bản đầy đủ (thêm RevenueCat entitlement) — chỉ sau khi đã chạy `report`:
-
-```
-https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/products/locket/module/locket-full.module
+https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/products/locket/module/locket.module
 ```
 
 Bật HTTPS Decrypt + trust CA (Config > ⓘ > HTTPS Decrypt > Generate new CA >
 Install Certificate, rồi Cài đặt > Giới thiệu > Tin cậy chứng chỉ).
 Module chỉ chạy khi **全局路由 = 配置**.
+
+Ngay sau khi cài, module **chỉ sửa Remote Config**. Phần RevenueCat mặc định là
+`argument=report` — nó không sửa gì cho tới khi bạn tự đổi. Đây là chủ ý, xem
+mục "RevenueCat" bên dưới.
 
 ### 2. Chạy `capture` TRƯỚC — không được bỏ qua
 
@@ -120,7 +123,7 @@ Engine lật cờ **chỉ khi** thoả cả ba điều kiện:
 
 Không thoả thì để nguyên. **Thà bỏ sót còn hơn ghi đè cấu hình thật của app.**
 
-### 4. Bản full: chạy `report` trước, rồi mới `patch`
+### 4. Phần RevenueCat: chạy `report` trước, rồi mới `patch`
 
 Hook `locket-rc-response` **mặc định là `argument=report`** — nó không sửa gì.
 Đây là chủ ý: bạn phải biết endpoint có được ký hay không trước khi quyết định.
@@ -150,30 +153,60 @@ chắc chắn nhất để module "chạy mà không làm gì".
 
 ## Đọc kết quả khi không xem được log
 
-Shadowrocket không có trình xem log script. Hai kênh:
+Shadowrocket không có trình xem log script. Một kênh, hai phần:
 
-**Kênh 1 — một dòng trong `数据 > 代理`** (với `argument=...&probe=true`):
+Mở Safari:
 
 ```
-firebaselogging.googleapis.com/v1/xwuan-probe?xwuan=rc&st=ok&n=42&fl=3&b64=2
+https://firebaseremoteconfig.googleapis.com/xwuan-selftest
 ```
+
+Rồi vào `数据 > 代理`, tìm dòng `?xwuan-report=...`. Một dòng trả lời cả hai:
+
+### `rc.*` — Remote Config
 
 | Trường | Nghĩa |
 |---|---|
-| `st=ok` | engine chạy và thấy `entries` |
-| `st=no_entries` | response không có `entries` (khác namespace? khác host?) |
-| `st=no_template` | `state: NO_TEMPLATE` — app chưa cấu hình Remote Config |
-| `st=gzip_body` | body nén, engine passthrough (xem "Giới hạn") |
-| `st=parse_fail` | body không phải JSON |
-| `st=empty_body` | không có body — kiểm tra `requires-body` |
-| `n=` | số key trong Remote Config |
-| `fl=` | số cờ đã lật |
-| `b64=` | số giá trị base64 (nội dung nằm trong store) |
+| `rc.state=never_ran` | engine chưa chạy — kiểm tra MITM/CA/route |
+| `rc.reason=ok` | thấy `entries` |
+| `rc.reason=no_entries` | response không có `entries` (khác namespace? khác host?) |
+| `rc.reason=no_template` | `state: NO_TEMPLATE` — app chưa cấu hình Remote Config |
+| `rc.reason=gzip_body` | body nén, engine passthrough |
+| `rc.n=` | số key |
+| `rc.fl=` | số cờ đã lật |
+| `rc.keys=` | tên key — **đọc cái này để biết cờ nào cần lật** |
+| `rc.eg=` | ví dụ `key=value` thật (chạy `capture` rồi đọc) |
 
-Probe **không** gửi tên key, giá trị, hay URL gốc. Chỉ số đếm.
+### `pay.*` — RevenueCat
 
-**Kênh 2 — báo cáo gộp** qua `/xwuan-selftest` (mục 2 ở trên), có `keys=` và
-`eg=`.
+| Trường | Nghĩa |
+|---|---|
+| `pay.state=never_ran` | engine chưa chạy ở host này |
+| `pay.st=report` | chế độ report (không sửa) |
+| `pay.st=ok` | đã chèn entitlement |
+| `pay.st=already_present` | đã có sẵn, không làm gì |
+| `pay.st=need_ek_pid` | thiếu `ek=`/`pid=` — chưa patch gì |
+| `pay.st=not_modified` | vẫn nhận 304 → hook request chưa chạy |
+| `pay.sig=n` | **KHÔNG** có header chữ ký → patch sẽ sạch |
+| `pay.sig=<tên>` | có ký → patch có thể `failed` |
+| `pay.ent=` | entitlement hiện có — **đọc để lấy `ek=`** |
+| `pay.sub=` | product id — **đọc để lấy `pid=`** |
+
+### `req=`
+
+Tên header mà hook request đã xoá. `req=never_ran` nghĩa là hook request chưa
+chạy — mọi kết quả `not_modified` là do thiếu nó, không phải do app.
+
+### Kênh dự phòng: `&probe=true`
+
+Thêm vào bất kỳ hook nào để có một dòng ngắn trong `数据 > 代理`:
+
+```
+firebaselogging.googleapis.com/v1/xwuan-probe?xwuan=rc&st=ok&n=42&fl=3
+firebaselogging.googleapis.com/v1/xwuan-probe?xwuan=rcpay&st=report&sig=n&etag=y
+```
+
+Probe **không** gửi body, token, tên entitlement, hay URL gốc. Chỉ số đếm.
 
 ## Giới hạn đã biết
 
@@ -184,12 +217,13 @@ Probe **không** gửi tên key, giá trị, hay URL gốc. Chỉ số đếm.
 | Locket dùng A/B test | key khác nhau giữa các máy | `capture` là cách xử lý, không hard-code |
 | Backend kiểm tra lại quyền | chỉ đổi giao diện | giới hạn của tầng HTTP |
 | Realtime namespace | dùng cùng engine | cùng dạng `entries{}` |
+| Client khác Shadowrocket | không hỗ trợ | cú pháp + runtime khác, xem mục đầu |
 
 ## Về các module Locket Gold đang lưu hành
 
 (`vanhytt/locket_pro`, `nghieee/modules-shadowrocket`) đều sửa
 `api.revenuecat.com` + `api.locketcamera.com`. Cấu trúc của họ đúng — 3 bước
-[xoá cache header] → [patch response] — và `locket-full.module` học đúng cấu
+[xoá cache header] → [patch response] — và `locket.module` học đúng cấu
 trúc đó.
 
 Ba chỗ trong code của họ nên tránh:

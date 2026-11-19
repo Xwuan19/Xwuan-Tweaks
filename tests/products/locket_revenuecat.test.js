@@ -18,8 +18,7 @@ const vm = require('node:vm');
 
 const RC = path.resolve(__dirname, '../../products/locket/engine/locket_revenuecat.js');
 const REQ = path.resolve(__dirname, '../../products/locket/engine/locket_rc_request.js');
-const SELFTEST = path.resolve(__dirname, '../../products/locket/engine/locket_rc_selftest.js');
-const MODULE = path.resolve(__dirname, '../../products/locket/module/locket-full.module');
+const MODULE = path.resolve(__dirname, '../../products/locket/module/locket.module');
 
 const M = require(RC);
 const RC_SRC = fs.readFileSync(RC, 'utf8');
@@ -278,32 +277,55 @@ test('request engine: trả headers đã xoá, giữ Authorization', () => {
   assert.ok(done[0].url === undefined, 'không đụng url');
 });
 
-// ── selftest ───────────────────────────────────────────────────────────────
+// ── selftest gộp: đọc cả hai phần ──────────────────────────────────────────
 
-test('selftest: chưa chạy -> never_ran', () => {
+const SELFTEST_NEW = path.resolve(__dirname, '../../products/locket/engine/locket_selftest.js');
+
+function runSelftest(stores) {
   const done = [];
-  vm.runInNewContext(fs.readFileSync(SELFTEST, 'utf8'), {
-    $request: { url: 'https://api.revenuecat.com/v1/xwuan-selftest' },
-    $persistentStore: { read: () => null },
+  vm.runInNewContext(fs.readFileSync(SELFTEST_NEW, 'utf8'), {
+    $request: { url: 'https://firebaseremoteconfig.googleapis.com/xwuan-selftest' },
+    $persistentStore: { read: (k) => (k in stores ? stores[k] : null) },
     $done: (r) => done.push(r)
   });
-  assert.ok(done[0].url.includes('never_ran'));
+  return done[0].url;
+}
+
+test('selftest gộp: chưa chạy gì -> cả hai phần never_ran', () => {
+  const u = runSelftest({});
+  assert.ok(u.includes('rc.state=never_ran'));
+  assert.ok(u.includes('pay.state=never_ran'));
+  assert.ok(u.includes('req=never_ran'));
 });
 
-test('selftest: có dữ liệu -> trả ent, sub, sig, etag', () => {
-  const done = [];
-  const rec = { lastAt: Date.now(), lastPhase: 'report', reason: 'report',
-                entCount: 1, entKeys: 'Pro', subKeys: 'com.x.y', hasSigHeader: 'n', hasEtag: 'y' };
-  vm.runInNewContext(fs.readFileSync(SELFTEST, 'utf8'), {
-    $request: { url: 'https://api.revenuecat.com/v1/xwuan-selftest' },
-    $persistentStore: { read: () => JSON.stringify(rec) },
-    $done: (r) => done.push(r)
+test('selftest gộp: báo cáo một dòng có đủ rc.* và pay.*', () => {
+  const rc = { lastAt: Date.now(), lastPhase: 'patched', reason: 'ok',
+               mode: 'capture', keyCount: 3, flipped: 1, b64Count: 0, inBytes: 50,
+               keys: 'isPremium,other', eg: 'isPremium=false' };
+  const pay = { lastAt: Date.now(), lastPhase: 'report', reason: 'report',
+                entCount: 1, entKeys: 'Gold', subKeys: 'com.x.y',
+                hasSigHeader: 'n', hasEtag: 'y' };
+  const req = { dropped: 'If-None-Match' };
+  const u = runSelftest({
+    XwuanLocketDiag: JSON.stringify(rc),
+    XwuanLocketRCDiag: JSON.stringify(pay),
+    XwuanLocketReqDiag: JSON.stringify(req)
   });
-  const u = done[0].url;
-  assert.ok(u.includes('ent=Pro'));
-  assert.ok(u.includes('sub=com.x.y'));
-  assert.ok(u.includes('sig=n'));
-  assert.ok(u.includes('etag=y'));
+  assert.ok(u.includes('rc.n=3'));
+  assert.ok(u.includes('rc.fl=1'));
+  assert.ok(u.includes('isPremium'));
+  assert.ok(u.includes('pay.sig=n'));
+  assert.ok(u.includes('pay.etag=y'));
+  assert.ok(u.includes('pay.ent=Gold'));
+  assert.ok(u.includes('pay.sub=com.x.y'));
+  assert.ok(u.includes('req=If-None-Match'));
+});
+
+test('selftest gộp: chỉ có rc, chưa có pay -> vẫn trả cả hai phần', () => {
+  const rc = { lastAt: Date.now(), reason: 'ok', keyCount: 2, keys: 'a,b' };
+  const u = runSelftest({ XwuanLocketDiag: JSON.stringify(rc) });
+  assert.ok(u.includes('rc.n=2'));
+  assert.ok(u.includes('pay.state=never_ran'), 'phải nói rõ RevenueCat chưa chạy');
 });
 
 // ── module: hợp đồng ───────────────────────────────────────────────────────
