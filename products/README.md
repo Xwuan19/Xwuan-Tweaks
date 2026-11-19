@@ -7,7 +7,7 @@ khai, có dữ liệu dùng chung, hoặc có tài liệu riêng theo từng hư
 |---|---|
 | `spotify/` | Hướng on-device chạy được; hướng server mới có tài liệu |
 | `youtube/` | Module Shadowrocket: chặn quảng cáo ở tầng protobuf. 83 test |
-| `locket/` | Hai module: chỉ Remote Config, và bản full có RevenueCat. 58 test |
+| `locket/` | Một module Shadowrocket: Remote Config + RevenueCat. 64 test |
 
 ## Khi nào dùng `products/`, khi nào dùng `modules/` + `scripts/`
 
