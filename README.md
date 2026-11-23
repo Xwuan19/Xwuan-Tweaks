@@ -18,8 +18,10 @@ Sao chép trực tiếp link **Raw** tương ứng với ứng dụng bạn đan
 | **Spotify Premium** | Shadowrocket | `https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/products/spotify/on-device/module/spotify-premium-ucs.module` |
 | **YouTube AdBlock** | Shadowrocket | `https://raw.githubusercontent.com/Xwuan19/Xwuan-Tweaks/main/products/youtube/module/youtube-adblock.module` |
 
-> Hướng DNS (cài 1 profile, không cần app) tạm dừng cùng đợt gỡ web — cần có server
-> chạy DoH + MITM trước. Xem `products/spotify/server/README.md` và `HANDOFF.md`.
+> **Hướng DNS / server:** cần VPS có IPv4 riêng + cổng 443 thô. Script dựng đã có ở
+> `deploy/install.sh` — xem [`deploy/README.md`](deploy/README.md).
+> Chỉ áp dụng cho **Remote Config**, không đụng `api.revenuecat.com`
+> ([lý do](products/locket/dns/README.md)).
 
 > [!IMPORTANT]
 > **2 bước bắt buộc để kích hoạt Locket VIP thành công:**
@@ -42,6 +44,7 @@ Xwuan-Tweaks/
 ├── admin/                 # Thư viện DNS: sinh profile DoH + danh sách domain rewrite
 ├── ca/                    # Root CA: cert trong git, key KHÔNG bao giờ vào git
 ├── nextdns/               # NextDNS API client + DOMAINS_TO_REWRITE
+├── deploy/                # Script dựng proxy trên VPS (LunaCloud/RackNerd/Oracle)
 │
 ├── products/              # Sản phẩm nhiều phần (spotify/: on-device + server · youtube/: module + engine)
 ├── research/              # Nguyên liệu, thử nghiệm (reference_nightmarket/, scanner/)
@@ -54,10 +57,9 @@ Xwuan-Tweaks/
 > **Web đã tạm gỡ** (`public/`, `api/`, `supabase/`, `vercel.json`). Trọng tâm hiện tại là
 > DNS + module. Xem `HANDOFF.md` mục "Đã gỡ web" để biết cách khôi phục từ git history.
 >
-> Mỗi thư mục đều có `README.md` riêng. Bắt đầu từ [`HANDOFF.md`](HANDOFF.md).
-
 > Mỗi thư mục đều có `README.md` riêng giải thích nội dung và ai trỏ tới nó.
-> Bắt đầu từ [`HANDOFF.md`](HANDOFF.md) để biết hiện trạng.
+> Người: bắt đầu từ [`HANDOFF.md`](HANDOFF.md). AI agent: đọc
+> [`AGENTS.md`](AGENTS.md) trước.
 
 ---
 
@@ -69,8 +71,8 @@ Xwuan-Tweaks/
 3. **Đồng bộ Go Proxy**: Khi có payload mới, đồng bộ vào `proxy/handler/firebase.go` hoặc `proxy/handler/revenuecat.go`.
 4. **Kiểm thử trước khi push**:
    ```bash
-   node --test tests/*.test.js tests/*/*.test.js   # 35 test, phải xanh hết
-   go test ./tests/proxy/...                        # cần Go toolchain
+   for f in $(find tests -name '*.test.js'); do node --test "$f"; done   # 164 test, phải xanh hết
+   # go test ./tests/proxy/...  -> cần Go toolchain (sandbox hiện không có)
    ```
 5. **Cập nhật `HANDOFF.md`** nếu quyết định thay đổi hoặc phát hiện cạm bẫy mới — file đó
    là nguồn sự thật cho phiên làm việc sau.

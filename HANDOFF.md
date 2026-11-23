@@ -3,7 +3,7 @@
 Tài liệu bàn giao: mỗi khi dừng việc, cập nhật file này để phiên sau (hoặc người khác)
 không phải dò lại từ đầu.
 
-**Cập nhật:** 2026-11-18
+**Cập nhật:** 2026-11-19
 
 ---
 
@@ -55,6 +55,14 @@ và `admin/lib/nextdns.js` (giữ `DOMAINS_TO_REWRITE`).
 - `scripts/locket_*.js` (6 file) — đều có module trỏ tới, không có file mồ côi
 - Test: `tests/scripts/firebase_filters.test.js`
 
+### Hướng B — deploy thật (MỚI 2026-11-19)
+- `deploy/install.sh` — dựng trọn trên VPS sạch: Go → build `proxy/` → CA → systemd
+  bind 443 → UFW → `REJECT` UDP 443. Chế độ `--status / --regen-ca / --firewall-off`.
+- `deploy/README.md` — 3 lỗi phải tránh (AAAA, REJECT vs DROP, tự khoá SSH) và
+  **mảnh còn thiếu**: `proxy/main.go` chưa có nhánh DoH (luôn là MITM theo SNI).
+- Test: `tests/deploy/install_script.test.js` (9).
+- Nút thắt cũ đã giải: **LunaCloud nhận thanh toán VN** (60.000đ/tháng, Eco 1).
+
 ### Locket — hướng B (DNS + MITM) ⚠️ code còn, phần phát hành đã gỡ
 - `proxy/` — Go MITM proxy (Fly.io): forging cert theo SNI, sửa `expires_date` RevenueCat
   + Firebase Remote Config + `api.locketcamera.com`. **Còn nguyên.**
@@ -89,11 +97,13 @@ và `admin/lib/nextdns.js` (giữ `DOMAINS_TO_REWRITE`).
 ## Lệnh kiểm thử
 
 ```bash
-node --test $(find tests -name '*.test.js')   # 83 test — phải xanh hết
-go test ./tests/proxy/...                        # cần Go toolchain (sandbox hiện không có)
+for f in $(find tests -name '*.test.js' | sort); do node --test "$f"; done
 ```
 
-Kỳ vọng: `tests 35 / pass 35 / fail 0`.
+Kỳ vọng: **164 pass / 0 fail**. `go test` chưa chạy được (sandbox không có Go).
+
+> AI agent: đọc [`AGENTS.md`](AGENTS.md) — có thêm lý do kỹ thuật, không chỉ
+> lệnh.
 
 ---
 
@@ -136,8 +146,8 @@ Kỳ vọng: `tests 35 / pass 35 / fail 0`.
 4. **Chưa test Go proxy** trong môi trường này (không có `go`). Cần chạy `go test ./tests/proxy/...`
    ở máy có Go trước khi tin vào phần proxy.
 5. **Test module YouTube trên iPhone thật.** Mọi thứ hiện là test Node. Trước khi phát cho
-   ai: cài module, đặt `argument=ads&debug=true`, mở YouTube, đối chiếu 4 dòng log ở
-   `products/youtube/README.md`. Nếu `/youtubei/v1/log_event` chặn nhầm (mất lịch sử xem)
+   ai: cài module, đặt `argument=ads&probe=true`, mở YouTube, đối chiếu 4 dòng ở
+   `products/youtube/README.md`. (**Không** dùng `debug=true` — xem `AGENTS.md` §4.) Nếu `/youtubei/v1/log_event` chặn nhầm (mất lịch sử xem)
    thì bỏ dòng `reject-200` tương ứng trước tiên.
 6. **2 key madprops Spotify** (`com.spotify.madprops.use.ucs.product.state`,
    `com.spotify.madprops.delivered.by.ucs`) được bổ sung tay, **không có trong upstream
